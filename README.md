@@ -48,3 +48,12 @@ pip install -r requirements.txt
 
 # Iniciar servidor de desarrollo
 uvicorn app.main:app --reload
+
+# Entrar a la carpeta del frontend
+cd frontend
+
+# Instalar dependencias de Node
+npm install
+
+# Iniciar servidor local
+npm run dev
