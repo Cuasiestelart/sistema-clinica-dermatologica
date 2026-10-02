@@ -3,19 +3,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.routers import productos, pacientes, recetas
 from app.routers import reportes
 
-
 app = FastAPI(
     title="Clínica Dermatológica & Farmacia API",
     version="1.0.0"
 )
 
-# Configuración de CORS
+# Configuración de CORS para aceptar peticiones tanto locales como de Render
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
