@@ -774,9 +774,19 @@ export default function VistaDoctor() {
                     <span className="text-xs font-bold text-slate-400">$</span>
                     <input
                       type="number"
+                      min="0"
                       step="0.01"
                       value={totalConsulta}
-                      onChange={(e) => setTotalConsulta(Number(e.target.value))}
+                      onKeyDown={(e) => {
+                        // Evita ingresar el signo menos '-' o caracteres no numéricos como la 'e'
+                        if (e.key === '-' || e.key === 'e' || e.key === 'E') {
+                          e.preventDefault();
+                        }
+                      }}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value);
+                        setTotalConsulta(isNaN(val) ? 0 : Math.max(0, val));
+                      }}
                       className="w-20 px-2 py-0.5 bg-white border-2 border-emerald-500 rounded-lg text-right font-bold text-emerald-950 text-sm focus:outline-none"
                     />
                   </div>
