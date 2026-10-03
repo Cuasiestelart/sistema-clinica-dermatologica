@@ -1,6 +1,7 @@
 import csv
 import io
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
@@ -11,8 +12,23 @@ from app.models.paciente import Paciente
 
 router = APIRouter(prefix="/api/reportes", tags=["Reportes"])
 
+TZ_MEXICO = ZoneInfo("America/Mexico_City")
+
 def anio_maximo() -> int:
-    return datetime.now().year + 5
+    return datetime.now(TZ_MEXICO).year + 5
+
+def convertir_a_hora_local(dt: datetime | None) -> tuple[str, str]:
+    if not dt:
+        return "N/A", "N/A"
+    
+    # Si viene sin zona horaria (naive), asumimos UTC y la convertimos a México
+    if dt.tzinfo is None:
+        dt_utc = dt.replace(tzinfo=ZoneInfo("UTC"))
+        dt_local = dt_utc.astimezone(TZ_MEXICO)
+    else:
+        dt_local = dt.astimezone(TZ_MEXICO)
+        
+    return dt_local.strftime("%d/%m/%Y"), dt_local.strftime("%H:%M")
 
 @router.get("/resumen-mensual")
 def resumen_mensual(
@@ -85,8 +101,7 @@ def exportar_reporte_mensual(
     ])
 
     for r in recetas:
-        fecha_str = r.fecha.strftime("%d/%m/%Y") if r.fecha else "N/A"
-        hora_str = r.fecha.strftime("%H:%M") if r.fecha else "N/A"
+        fecha_str, hora_str = convertir_a_hora_local(r.fecha)
         paciente_nom = r.paciente.nombre_completo if r.paciente else "Sin Nombre"
         paciente_tel = r.paciente.telefono if r.paciente else ""
         costo_base = f"{float(r.costo_consulta or 0.0):.2f}"
