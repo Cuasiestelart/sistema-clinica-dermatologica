@@ -21,4 +21,4 @@ COPY . /app/
 EXPOSE 8000
 
 # 7. Comando para arrancar el servidor (0.0.0.0 es indispensable para que acepte conexiones fuera del contenedor)
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD python seed.py && uvicorn app.main:app --host 0.0.0.0 --port 8000
