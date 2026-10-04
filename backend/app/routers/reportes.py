@@ -9,10 +9,11 @@ from sqlalchemy import extract
 from app.database import get_db
 from app.models.receta import Receta
 from app.models.paciente import Paciente
+from datetime import datetime, timezone, timedelta
 
 router = APIRouter(prefix="/api/reportes", tags=["Reportes"])
 
-TZ_MEXICO = ZoneInfo("America/Mexico_City")
+TZ_MEXICO = timezone(timedelta(hours=-6))
 
 def anio_maximo() -> int:
     return datetime.now(TZ_MEXICO).year + 5
@@ -20,15 +21,8 @@ def anio_maximo() -> int:
 def convertir_a_hora_local(dt: datetime | None) -> tuple[str, str]:
     if not dt:
         return "N/A", "N/A"
-    
-    # Si viene sin zona horaria (naive), asumimos UTC y la convertimos a México
-    if dt.tzinfo is None:
-        dt_utc = dt.replace(tzinfo=ZoneInfo("UTC"))
-        dt_local = dt_utc.astimezone(TZ_MEXICO)
-    else:
-        dt_local = dt.astimezone(TZ_MEXICO)
-        
-    return dt_local.strftime("%d/%m/%Y"), dt_local.strftime("%H:%M")
+    # La fecha ya está en hora de México, solo se formatea directo:
+    return dt.strftime("%d/%m/%Y"), dt.strftime("%H:%M")
 
 @router.get("/resumen-mensual")
 def resumen_mensual(

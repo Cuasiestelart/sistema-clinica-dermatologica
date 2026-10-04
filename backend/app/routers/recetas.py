@@ -6,6 +6,9 @@ from app.models.receta import Receta, RecetaDetalle
 from app.models.paciente import Paciente
 from app.models.producto import Producto
 from app.schemas.receta import RecetaCreate, RecetaOut
+from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
+
 
 router = APIRouter(prefix="/api/recetas", tags=["Recetas"])
 
@@ -25,6 +28,9 @@ def crear_receta(receta_in: RecetaCreate, db: Session = Depends(get_db)):
     pct = float(receta_in.descuento_porcentaje or 0.0)
 
     # 3. Instanciar la receta con todos sus datos clínicos y de honorarios
+    TZ_MEXICO = timezone(timedelta(hours=-6))
+    hora_actual = datetime.now(TZ_MEXICO).replace(tzinfo=None)
+
     nueva_receta = Receta(
         paciente_id=receta_in.paciente_id,
         diagnostico=receta_in.diagnostico,
@@ -32,7 +38,8 @@ def crear_receta(receta_in: RecetaCreate, db: Session = Depends(get_db)):
         costo_consulta=round(costo, 2),
         descuento_porcentaje=round(pct, 2),
         descuento_motivo=receta_in.descuento_motivo,
-        total_consulta=round(total, 2)
+        total_consulta=round(total, 2),
+        fecha=hora_actual
     )
     db.add(nueva_receta)
     db.flush()
