@@ -23,7 +23,7 @@ def convertir_a_hora_local(dt: datetime | None) -> tuple[str, str]:
         return "N/A", "N/A"
     # La fecha ya está en hora de México, solo se formatea directo:
     return dt.strftime("%d/%m/%Y"), dt.strftime("%H:%M")
-
+ 
 @router.get("/resumen-mensual")
 def resumen_mensual(
     anio: int = Query(..., ge=2020),
@@ -83,7 +83,7 @@ def exportar_reporte_mensual(
 
     writer = csv.writer(output, delimiter=",", quoting=csv.QUOTE_MINIMAL)
     writer.writerow([
-        "Folio Receta",
+        "Folio Consulta",
         "Fecha",
         "Hora",
         "Paciente",

@@ -277,10 +277,7 @@ export default function VistaDoctor() {
       setErrorEnvio('Selecciona o registra un paciente antes de emitir la receta.');
       return;
     }
-    if (itemsReceta.length === 0) {
-      setErrorEnvio('Agrega al menos un producto a la receta.');
-      return;
-    }
+
 
     setErrorEnvio(null);
 

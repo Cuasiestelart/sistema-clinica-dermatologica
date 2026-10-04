@@ -29,7 +29,7 @@ class RecetaBase(BaseModel):
     total_consulta: Optional[float] = 800.0
 
 class RecetaCreate(RecetaBase):
-    detalles: List[RecetaDetalleCreate]
+    detalles: List[RecetaDetalleCreate] = []
 
 class RecetaOut(RecetaBase):
     id: int

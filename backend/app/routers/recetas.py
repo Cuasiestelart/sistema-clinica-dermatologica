@@ -19,8 +19,8 @@ def crear_receta(receta_in: RecetaCreate, db: Session = Depends(get_db)):
     if not paciente:
         raise HTTPException(status_code=404, detail="Paciente no encontrado")
 
-    if not receta_in.detalles:
-        raise HTTPException(status_code=400, detail="La receta debe incluir al menos un producto")
+    #if not receta_in.detalles:
+    #    raise HTTPException(status_code=400, detail="La receta debe incluir al menos un producto")
 
     # 2. Calcular valores seguros de honorarios
     costo = float(receta_in.costo_consulta if receta_in.costo_consulta is not None else 800.0)
