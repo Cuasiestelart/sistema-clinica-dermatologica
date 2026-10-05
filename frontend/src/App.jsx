@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import VistaDoctor from './pages/VistaDoctor';
 import VistaFarmacia from './pages/VistaFarmacia';
-import { Pill, Stethoscope, ShoppingBag } from 'lucide-react';
+import VistaAsistente from './pages/VistaAsistente';
+import { Pill, Stethoscope, ShoppingBag, CalendarCheck } from 'lucide-react';
 
 export default function App() {
-  const [vistaActual, setVistaActual] = useState('doctor'); // 'doctor' | 'farmacia'
+  const [vistaActual, setVistaActual] = useState('asistente'); // 'asistente' | 'doctor' | 'farmacia'
 
   return (
     <div className="min-h-screen bg-slate-100/70 text-slate-800 font-sans">
@@ -22,6 +23,16 @@ export default function App() {
           </div>
 
           <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200/60">
+            <button
+              onClick={() => setVistaActual('asistente')}
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                vistaActual === 'asistente'
+                  ? 'bg-white text-emerald-950 shadow-xs'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <CalendarCheck className="w-3.5 h-3.5" /> Recepción (Agenda)
+            </button>
             <button
               onClick={() => setVistaActual('doctor')}
               className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
@@ -48,7 +59,9 @@ export default function App() {
 
       {/* Contenedor Principal */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
-        {vistaActual === 'doctor' ? <VistaDoctor /> : <VistaFarmacia />}
+        {vistaActual === 'asistente' && <VistaAsistente />}
+        {vistaActual === 'doctor' && <VistaDoctor />}
+        {vistaActual === 'farmacia' && <VistaFarmacia />}
       </main>
     </div>
   );

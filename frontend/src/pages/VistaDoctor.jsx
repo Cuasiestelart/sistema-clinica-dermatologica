@@ -831,7 +831,7 @@ export default function VistaDoctor() {
             {/* Filtros de Mes y Año */}
             <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200">
               <div>
-                <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1 flex items-center gap-1">
+                <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1 flex items-center gap-1">
                   <Calendar className="w-3.5 h-3.5" /> Mes
                 </label>
                 <select

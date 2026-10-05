@@ -14,6 +14,12 @@ export const getProductos = (query = '') =>
 export const getSustitutos = (productoId) => 
   api.get(`/productos/${productoId}/sustitutos`);
 
+export const crearProducto = (data) =>
+  api.post('/productos/', data);
+
+export const actualizarProducto = (id, data) =>
+  api.put(`/productos/${id}`, data);
+
 // Endpoints de Pacientes
 export const getPacientes = (query = '') => 
   api.get(`/pacientes/${query ? `?q=${encodeURIComponent(query)}` : ''}`);
@@ -21,7 +27,13 @@ export const getPacientes = (query = '') =>
 export const crearPaciente = (datosPaciente) => 
   api.post('/pacientes/', datosPaciente);
 
-// Endpoints de Recetas
+export const actualizarNotaPaciente = (id, nota_fija) =>
+  api.patch(`/pacientes/${id}/nota`, { nota_fija });
+
+export const getHistorialPaciente = (pacienteId) =>
+  api.get(`/recetas/paciente/${pacienteId}`);
+
+// Endpoints de Recetas / Consultas
 export const crearReceta = (datosReceta) => 
   api.post('/recetas/', datosReceta);
 
@@ -31,18 +43,7 @@ export const getRecetaPorId = (id) =>
 export const getRecetasPorPaciente = (pacienteId) => 
   api.get(`/recetas/paciente/${pacienteId}`);
 
-export const crearProducto = (data) =>
-   api.post('/productos/', data);
-
-export const actualizarProducto = (id, data) =>
-   api.put(`/productos/${id}`, data);
-
-export const actualizarNotaPaciente = (id, nota_fija) =>
-  api.patch(`/pacientes/${id}/nota`, { nota_fija });
-
-export const getHistorialPaciente = (pacienteId) =>
-  api.get(`/recetas/paciente/${pacienteId}`);
-
+// Endpoints de Reportes y Cortes
 export const getResumenMensual = (anio, mes) =>
   api.get('/reportes/resumen-mensual', { params: { anio, mes } });
 
@@ -63,5 +64,19 @@ export const descargarReporteMensual = async (anio, mes) => {
   link.remove();
   window.URL.revokeObjectURL(url);
 };
+
+// Endpoints de Citas / Agenda (Recepción y Consultorios)
+export const getCitas = (fecha = '', profesional = '') => {
+  const params = {};
+  if (fecha) params.fecha = fecha;
+  if (profesional) params.profesional = profesional;
+  return api.get('/citas/', { params });
+};
+
+export const crearCita = (datosCita) => 
+  api.post('/citas/', datosCita);
+
+export const actualizarEstadoCita = (citaId, estado) => 
+  api.patch(`/citas/${citaId}/estado`, null, { params: { estado } });
 
 export default api;

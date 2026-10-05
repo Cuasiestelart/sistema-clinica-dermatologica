@@ -121,7 +121,7 @@ def poblar_base_datos():
 
         print("-> Insertando paciente muestra...")
         paciente_demo = Paciente(
-            nombre_completo="Tapia Torres Roberto",
+            nombre_completo="Roberto Tapia Torres",
             telefono="3121317624",
             nota_fija="Paciente con piel mixta y tendencia a brillo en zona T. Alérgico a sulfas. Prefiere presentaciones ligeras en gel.",
             saldo_monedero=85.00

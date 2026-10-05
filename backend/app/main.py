@@ -1,14 +1,25 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import productos, pacientes, recetas
-from app.routers import reportes
+
+from app.database import engine, Base
+# Importar modelos para que Base.metadata los reconozca al arrancar
+from app.models.producto import Producto
+from app.models.paciente import Paciente
+from app.models.receta import Receta, RecetaDetalle
+from app.models.cita import Cita
+
+# Crear tablas en la base de datos si no existen
+Base.metadata.create_all(bind=engine)
+
+# Importar routers
+from app.routers import productos, pacientes, recetas, reportes, citas
 
 app = FastAPI(
-    title="Clínica Dermatológica & Farmacia API",
-    version="1.0.0"
+    title="Sistema de Gestión Clínica Dermatológica",
+    version="1.1.0"
 )
 
-# Configuración de CORS para aceptar peticiones tanto locales como de Render
+# Configuración de CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -17,12 +28,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Inclusión de routers
+# Registrar routers
 app.include_router(productos.router, tags=["Productos"])
 app.include_router(pacientes.router, tags=["Pacientes"])
 app.include_router(recetas.router, tags=["Recetas"])
 app.include_router(reportes.router)
+app.include_router(citas.router)
 
 @app.get("/")
-def read_root():
-    return {"status": "online", "message": "API de Clínica Dermatológica activa"}
+def root():
+    return {"mensaje": "API de Clínica Dermatológica en funcionamiento"}
