@@ -7,6 +7,12 @@ class PacienteBase(BaseModel):
     email: Optional[str] = None
     nota_fija: Optional[str] = None
 
+class PacienteUpdate(BaseModel):
+    nombre_completo: Optional[str] = None
+    telefono: Optional[str] = None
+    email: Optional[str] = None
+    nota_fija: Optional[str] = None
+
 class PacienteCreate(PacienteBase):
     pass
 

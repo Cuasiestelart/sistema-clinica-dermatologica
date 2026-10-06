@@ -20,18 +20,25 @@ import {
   FileSpreadsheet,
   Download,
   Users,
-  Tag
+  Tag,
+  CalendarDays,
+  Phone,
+  UserCheck,
+  Stethoscope
 } from 'lucide-react';
 import { 
   getProductos, 
   getPacientes, 
+  getPaciente,
   crearPaciente, 
   crearReceta, 
   getSustitutos, 
   actualizarNotaPaciente,
   getHistorialPaciente,
   getResumenMensual,
-  descargarReporteMensual
+  descargarReporteMensual,
+  getCitas,
+  actualizarEstadoCita
 } from '../api/client';
 
 export default function VistaDoctor() {
@@ -48,7 +55,12 @@ export default function VistaDoctor() {
   const [pacientesSugeridos, setPacientesSugeridos] = useState([]);
   const [pacienteSeleccionado, setPacienteSeleccionado] = useState(null);
   const [modalNuevoPac, setModalNuevoPac] = useState(false);
+  
+  // Estado de Nuevo Paciente
   const [nuevoPac, setNuevoPac] = useState({ nombre_completo: '', telefono: '', email: '', nota_fija: '' });
+  const [ladaPac, setLadaPac] = useState('+52');
+  const [sinTelefonoPac, setSinTelefonoPac] = useState(false);
+  const [errorModalPaciente, setErrorModalPaciente] = useState(null);
 
   const [notaPaciente, setNotaPaciente] = useState('');
   const [guardandoNota, setGuardandoNota] = useState(false);
@@ -56,6 +68,14 @@ export default function VistaDoctor() {
   const [modalHistorial, setModalHistorial] = useState(false);
   const [historialRecetas, setHistorialRecetas] = useState([]);
   const [cargandoHistorial, setCargandoHistorial] = useState(false);
+
+  // Estados de Agenda del Doctor
+  const hoyStr = new Date().toISOString().split('T')[0];
+  const [modalAgenda, setModalAgenda] = useState(false);
+  const [fechaAgenda, setFechaAgenda] = useState(hoyStr);
+  const [filtroEspecialidadAgenda, setFiltroEspecialidadAgenda] = useState('Dermatología');
+  const [citasAgenda, setCitasAgenda] = useState([]);
+  const [cargandoAgenda, setCargandoAgenda] = useState(false);
 
   // Estados de prescripción clínica
   const [itemsReceta, setItemsReceta] = useState([]);
@@ -141,6 +161,62 @@ export default function VistaDoctor() {
       setHistorialRecetas([]);
     } finally {
       setCargandoHistorial(false);
+    }
+  };
+
+  // Cargar Citas de la Agenda
+  const cargarCitasAgenda = async (fecha = fechaAgenda, esp = filtroEspecialidadAgenda) => {
+    try {
+      setCargandoAgenda(true);
+      const res = await getCitas(fecha, esp === 'TODAS' ? '' : esp);
+      let datos = res.data || [];
+      if (esp !== 'TODAS') {
+        datos = datos.filter(c => (c.profesional || c.especialidad) === esp);
+      }
+      setCitasAgenda(datos);
+    } catch (err) {
+      console.error('Error al cargar agenda médica:', err);
+      setCitasAgenda([]);
+    } finally {
+      setCargandoAgenda(false);
+    }
+  };
+
+  useEffect(() => {
+    if (modalAgenda) {
+      cargarCitasAgenda(fechaAgenda, filtroEspecialidadAgenda);
+    }
+  }, [modalAgenda, fechaAgenda, filtroEspecialidadAgenda]);
+
+  // Cargar paciente desde la agenda directo por ID
+  const atenderDesdeAgenda = async (cita) => {
+    const pId = cita.paciente_id || cita.paciente?.id;
+    if (!pId) {
+      console.error('No se encontró ID de paciente en la cita:', cita);
+      return;
+    }
+
+    try {
+      // 1. Obtenemos el paciente completo de la BD por su ID
+      const resPaciente = await getPaciente(pId);
+      setPacienteSeleccionado(resPaciente.data);
+    } catch (err) {
+      console.error('Error al consultar paciente por ID:', err);
+      if (cita.paciente) {
+        setPacienteSeleccionado(cita.paciente);
+      }
+    }
+
+    // 2. Cerramos el modal de inmediato
+    setModalAgenda(false);
+
+    // 3. Cambiamos el estado a 'en_atencion' (el estado válido en tu backend)
+    try {
+      if (cita.estado !== 'completada' && cita.estado !== 'cancelada') {
+        await actualizarEstadoCita(cita.id, 'en_atencion');
+      }
+    } catch (err) {
+      console.warn('No se pudo actualizar el estado de la cita:', err.response?.data || err.message);
     }
   };
 
@@ -261,14 +337,37 @@ export default function VistaDoctor() {
 
   const handleGuardarPaciente = async (e) => {
     e.preventDefault();
+    setErrorModalPaciente(null);
+
+    let telefonoPayload = null;
+    if (!sinTelefonoPac) {
+      const soloDigitos = nuevoPac.telefono.replace(/\D/g, '');
+      if (soloDigitos.length !== 10) {
+        setErrorModalPaciente('El número de celular debe contener exactamente 10 dígitos.');
+        return;
+      }
+      telefonoPayload = `${ladaPac}${soloDigitos}`;
+    }
+
     try {
-      const res = await crearPaciente(nuevoPac);
+      const res = await crearPaciente({
+        nombre_completo: nuevoPac.nombre_completo.trim(),
+        telefono: telefonoPayload,
+        email: nuevoPac.email.trim() || null,
+        nota_fija: nuevoPac.nota_fija.trim() || null
+      });
       setPacienteSeleccionado(res.data);
       setModalNuevoPac(false);
       setNuevoPac({ nombre_completo: '', telefono: '', email: '', nota_fija: '' });
+      setSinTelefonoPac(false);
+      setLadaPac('+52');
       setBusquedaPac('');
     } catch (err) {
-      alert('Error al registrar paciente: ' + (err.response?.data?.detail || err.message));
+      const detalle = err.response?.data?.detail;
+      const textoError = Array.isArray(detalle)
+        ? detalle.map(d => `${d.loc ? d.loc.slice(-1) : 'Campo'}: ${d.msg}`).join(' | ')
+        : (detalle || err.message);
+      setErrorModalPaciente('Error al registrar paciente: ' + textoError);
     }
   };
 
@@ -277,7 +376,6 @@ export default function VistaDoctor() {
       setErrorEnvio('Selecciona o registra un paciente antes de emitir la receta.');
       return;
     }
-
 
     setErrorEnvio(null);
 
@@ -337,22 +435,44 @@ export default function VistaDoctor() {
     return `Hace ${difAnios} ${difAnios === 1 ? 'año' : 'años'}`;
   };
 
+  // Extraer hora formateada (HH:MM) desde fecha_hora
+  const formatearHoraCita = (cita) => {
+    if (cita.hora) return cita.hora;
+    if (cita.fecha_hora) {
+      const d = new Date(cita.fecha_hora);
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+    }
+    return '--:--';
+  };
+
   return (
     <div className="space-y-6">
-      {/* Barra superior con acceso a Reportes Contables */}
-      <div className="flex items-center justify-between">
+      {/* Barra superior con acceso a Agenda y Reportes Contables */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold text-slate-800">Consulta Dermatológica</h1>
           <p className="text-xs text-slate-400">Expedición clínica y registro de honorarios</p>
         </div>
-        <button
-          type="button"
-          onClick={() => setModalReportes(true)}
-          className="flex items-center gap-1.5 px-3.5 py-2 bg-white border border-slate-200 hover:border-emerald-400 text-slate-700 hover:text-emerald-800 text-xs font-semibold rounded-xl shadow-sm transition-colors"
-        >
-          <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-          Reportes / Contador
-        </button>
+        
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setModalAgenda(true)}
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-50 border border-emerald-300 hover:bg-emerald-100 text-emerald-900 text-xs font-semibold rounded-xl shadow-xs transition-colors cursor-pointer"
+          >
+            <CalendarDays className="w-4 h-4 text-emerald-700" />
+            Agenda del Día
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setModalReportes(true)}
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-white border border-slate-200 hover:border-emerald-400 text-slate-700 hover:text-emerald-800 text-xs font-semibold rounded-xl shadow-xs transition-colors cursor-pointer"
+          >
+            <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+            Reportes / Contador
+          </button>
+        </div>
       </div>
 
       {/* Alertas */}
@@ -365,7 +485,7 @@ export default function VistaDoctor() {
 
       {errorEnvio && (
         <div className="flex items-center gap-3 p-4 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl shadow-sm">
-          <AlertCircle className="w-5 h-5 text-rose-600 flex-shrink-0" />
+          <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
           <span className="font-medium">{errorEnvio}</span>
         </div>
       )}
@@ -383,7 +503,7 @@ export default function VistaDoctor() {
               {pacienteSeleccionado && (
                 <button 
                   onClick={() => setPacienteSeleccionado(null)}
-                  className="text-xs text-rose-600 hover:underline font-medium"
+                  className="text-xs text-rose-600 hover:underline font-medium cursor-pointer"
                 >
                   Cambiar Paciente
                 </button>
@@ -403,7 +523,7 @@ export default function VistaDoctor() {
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => setModalHistorial(true)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-emerald-300 text-emerald-900 rounded-xl text-xs font-bold shadow-sm hover:bg-emerald-100 transition-colors"
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-emerald-300 text-emerald-900 rounded-xl text-xs font-bold shadow-sm hover:bg-emerald-100 transition-colors cursor-pointer"
                   >
                     <History className="w-3.5 h-3.5 text-emerald-700" />
                     Historial ({historialRecetas.length})
@@ -430,10 +550,10 @@ export default function VistaDoctor() {
                             setPacienteSeleccionado(p);
                             setPacientesSugeridos([]);
                           }}
-                          className="w-full text-left px-4 py-3 hover:bg-slate-50 border-b border-slate-100 last:border-0"
+                          className="w-full text-left px-4 py-3 hover:bg-slate-50 border-b border-slate-100 last:border-0 cursor-pointer"
                         >
                           <div className="font-medium text-sm text-slate-800 capitalize">{p.nombre_completo}</div>
-                          <div className="text-xs text-slate-400">{p.telefono || 'Sin teléfono'}</div>
+                          <div className="text-xs text-slate-400 font-mono">{p.telefono || 'Sin teléfono'}</div>
                           {p.nota_fija && (
                             <div className="text-xs text-amber-700 truncate mt-0.5">📌 {p.nota_fija}</div>
                           )}
@@ -443,11 +563,14 @@ export default function VistaDoctor() {
                   )}
                 </div>
                 <button
-                  onClick={() => setModalNuevoPac(true)}
-                  className="flex items-center gap-1.5 px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-sm font-medium transition-colors"
+                  onClick={() => {
+                    setErrorModalPaciente(null);
+                    setModalNuevoPac(true);
+                  }}
+                  className="flex items-center gap-1.5 px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-sm font-medium transition-colors cursor-pointer shrink-0"
                 >
                   <UserPlus className="w-4 h-4" />
-                  Nuevo
+                  + Nuevo
                 </button>
               </div>
             )}
@@ -522,7 +645,7 @@ export default function VistaDoctor() {
                           {sinStock ? (
                             <button
                               onClick={() => handleAbrirSustitutos(prod)}
-                              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-amber-100 text-amber-900 hover:bg-amber-200 transition-colors"
+                              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-amber-100 text-amber-900 hover:bg-amber-200 transition-colors cursor-pointer"
                               title="Buscar alternativas con stock"
                             >
                               <RefreshCw className="w-3 h-3" /> Sustitutos
@@ -531,7 +654,7 @@ export default function VistaDoctor() {
                             <button
                               onClick={() => agregarAReceta(prod)}
                               disabled={yaRecetado}
-                              className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                              className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
                                 yaRecetado 
                                   ? 'bg-slate-200 text-slate-400 cursor-not-allowed' 
                                   : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm'
@@ -565,7 +688,7 @@ export default function VistaDoctor() {
                   <button 
                     type="button" 
                     onClick={handleGuardarNota} 
-                    className="text-xs font-bold px-3 py-1 bg-amber-200 hover:bg-amber-300 text-amber-950 rounded-lg transition-colors shadow-sm"
+                    className="text-xs font-bold px-3 py-1 bg-amber-200 hover:bg-amber-300 text-amber-950 rounded-lg transition-colors shadow-sm cursor-pointer"
                   >
                     Guardar Nota
                   </button>
@@ -634,7 +757,7 @@ export default function VistaDoctor() {
                     </div>
                     <button 
                       onClick={() => eliminarItem(item.producto_id)}
-                      className="text-slate-400 hover:text-rose-600 p-1 transition-colors"
+                      className="text-slate-400 hover:text-rose-600 p-1 transition-colors cursor-pointer"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
@@ -675,13 +798,12 @@ export default function VistaDoctor() {
               type="date"
               value={proxCita}
               onChange={(e) => setProxCita(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
             />
           </div>
 
-{/* Bloque de Honorarios de Consulta Pro */}
+          {/* Bloque de Honorarios de Consulta */}
           <div className="p-4 bg-slate-100/90 border border-slate-200/90 rounded-2xl space-y-3">
-            {/* Cabecera simétrica con Base formateada */}
             <div className="flex items-center justify-between pb-2 border-b border-slate-200/80">
               <span className="text-[11px] font-bold uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
                 <DollarSign className="w-3.5 h-3.5 text-emerald-600" /> Honorarios Consulta
@@ -706,7 +828,6 @@ export default function VistaDoctor() {
               </div>
             </div>
 
-            {/* Pill Switcher tipo Segmented Control (Píldora real) */}
             <div className="flex p-1 bg-slate-200/80 rounded-xl gap-1">
               {[
                 { id: 'NORMAL', label: 'Normal' },
@@ -718,7 +839,7 @@ export default function VistaDoctor() {
                   key={preset.id}
                   type="button"
                   onClick={() => aplicarPreset(preset.id)}
-                  className={`flex-1 py-1.5 px-2 rounded-lg text-[11px] font-bold transition-all text-center ${
+                  className={`flex-1 py-1.5 px-2 rounded-lg text-[11px] font-bold transition-all text-center cursor-pointer ${
                     tipoDescuento === preset.id
                       ? 'bg-slate-900 text-white shadow-md'
                       : 'text-slate-600 hover:text-slate-900 hover:bg-slate-300/50'
@@ -729,7 +850,6 @@ export default function VistaDoctor() {
               ))}
             </div>
 
-            {/* Fila Inferior: Ajuste libre opcional + Total a Liquidar */}
             <div className="flex items-center justify-between pt-1">
               <div>
                 {tipoDescuento === 'MANUAL' ? (
@@ -744,7 +864,7 @@ export default function VistaDoctor() {
                     <button
                       type="button"
                       onClick={() => aplicarPreset('NORMAL')}
-                      className="text-xs text-slate-400 hover:text-rose-600 font-bold px-1"
+                      className="text-xs text-slate-400 hover:text-rose-600 font-bold px-1 cursor-pointer"
                       title="Volver a tarifa normal"
                     >
                       ✕
@@ -754,14 +874,13 @@ export default function VistaDoctor() {
                   <button
                     type="button"
                     onClick={() => setTipoDescuento('MANUAL')}
-                    className="text-[11px] text-slate-500 hover:text-emerald-700 font-medium flex items-center gap-1 hover:underline transition-colors"
+                    className="text-[11px] text-slate-500 hover:text-emerald-700 font-medium flex items-center gap-1 hover:underline transition-colors cursor-pointer"
                   >
                     ✏️ Ajuste manual
                   </button>
                 )}
               </div>
 
-              {/* Importe final */}
               <div className="flex items-center gap-2">
                 <span className="text-xs font-semibold text-slate-500">
                   Total a liquidar:
@@ -775,7 +894,6 @@ export default function VistaDoctor() {
                       step="0.01"
                       value={totalConsulta}
                       onKeyDown={(e) => {
-                        // Evita ingresar el signo menos '-' o caracteres no numéricos como la 'e'
                         if (e.key === '-' || e.key === 'e' || e.key === 'E') {
                           e.preventDefault();
                         }
@@ -798,7 +916,7 @@ export default function VistaDoctor() {
 
           <button
             onClick={handleEmitirReceta}
-            className="w-full flex items-center justify-center gap-2 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl text-sm transition-all shadow-sm active:scale-[0.99]"
+            className="w-full flex items-center justify-center gap-2 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl text-sm transition-all shadow-sm active:scale-[0.99] cursor-pointer"
           >
             <Send className="w-4 h-4" />
             Emitir Receta y Registrar Cobro
@@ -806,7 +924,145 @@ export default function VistaDoctor() {
         </div>
       </div>
 
-      {/* Modal / Reportes Contables y Cierres Mensuales */}
+      {/* ======================================================== */}
+      {/* MODAL / AGENDA DE CONSULTAS DEL DOCTOR                   */}
+      {/* ======================================================== */}
+      {modalAgenda && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-xl w-full p-6 shadow-xl space-y-4 max-h-[85vh] flex flex-col">
+            <div className="flex items-start justify-between pb-3 border-b border-slate-100">
+              <div>
+                <h3 className="font-bold text-slate-800 text-lg flex items-center gap-2">
+                  <CalendarDays className="w-5 h-5 text-emerald-600" />
+                  Agenda Médica
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Pacientes citados para consulta médica dermatológica
+                </p>
+              </div>
+              <button
+                onClick={() => setModalAgenda(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Selector de Fecha y Especialidad */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <span className="text-xs font-semibold text-slate-600">Fecha:</span>
+                <input
+                  type="date"
+                  value={fechaAgenda}
+                  onChange={(e) => setFechaAgenda(e.target.value)}
+                  className="text-xs font-semibold text-slate-800 bg-white border border-slate-200 px-2.5 py-1 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
+                />
+              </div>
+
+              <div className="flex items-center gap-1 w-full sm:w-auto justify-end">
+                <button
+                  type="button"
+                  onClick={() => setFiltroEspecialidadAgenda('Dermatología')}
+                  className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-colors cursor-pointer ${
+                    filtroEspecialidadAgenda === 'Dermatología'
+                      ? 'bg-slate-900 text-white'
+                      : 'text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  Dermatología
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFiltroEspecialidadAgenda('TODAS')}
+                  className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-colors cursor-pointer ${
+                    filtroEspecialidadAgenda === 'TODAS'
+                      ? 'bg-slate-900 text-white'
+                      : 'text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  Todas
+                </button>
+              </div>
+            </div>
+
+            {/* Listado de Citas */}
+            <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">
+              {cargandoAgenda ? (
+                <div className="py-12 text-center text-xs text-slate-400">Cargando agenda médica...</div>
+              ) : citasAgenda.length === 0 ? (
+                <div className="py-12 text-center text-slate-400 space-y-2">
+                  <Calendar className="w-8 h-8 mx-auto text-slate-300 stroke-[1.5]" />
+                  <p className="text-xs font-medium">No hay consultas médicas programadas para esta fecha.</p>
+                </div>
+              ) : (
+                citasAgenda.map((cita) => {
+                  let badge = 'bg-slate-100 text-slate-600 border-slate-200';
+                  if (cita.estado === 'en_espera') badge = 'bg-amber-100 text-amber-900 border-amber-300 animate-pulse font-bold';
+                  if (cita.estado === 'en_atencion') badge = 'bg-blue-100 text-blue-900 border-blue-300 font-bold';
+                  if (cita.estado === 'completada') badge = 'bg-emerald-100 text-emerald-900 border-emerald-300';
+                  if (cita.estado === 'cancelada') badge = 'bg-rose-100 text-rose-700 border-rose-200 line-through';
+
+                  return (
+                    <div 
+                      key={cita.id}
+                      className="p-3 bg-slate-50/80 border border-slate-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:border-slate-300 transition-colors"
+                    >
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-mono font-bold bg-white px-2 py-0.5 rounded border border-slate-200 text-slate-700">
+                            {formatearHoraCita(cita)}
+                          </span>
+                          <h4 className="text-sm font-bold text-slate-800">
+                            {cita.paciente?.nombre_completo || `Paciente #${cita.paciente_id}`}
+                          </h4>
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full border uppercase ${badge}`}>
+                            {(cita.estado || '').replace('_', ' ')}
+                          </span>
+                        </div>
+                        <div className="text-xs text-slate-500 flex flex-wrap items-center gap-2">
+                          <span className="flex items-center gap-1 font-medium text-slate-600">
+                            <Stethoscope className="w-3 h-3 text-blue-500" />
+                            {cita.profesional || cita.especialidad || 'Dermatología'}
+                          </span>
+                          {cita.motivo && <span>• {cita.motivo}</span>}
+                          {cita.paciente?.telefono && (
+                            <span className="font-mono text-[11px] text-slate-400 flex items-center gap-0.5">
+                              <Phone className="w-2.5 h-2.5" />
+                              {cita.paciente.telefono}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => atenderDesdeAgenda(cita)}
+                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-2xs cursor-pointer shrink-0"
+                      >
+                        <UserCheck className="w-3.5 h-3.5" />
+                        Cargar en Consulta
+                      </button>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            <div className="pt-3 border-t border-slate-100 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setModalAgenda(false)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold cursor-pointer"
+              >
+                Cerrar Agenda
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal / Reportes Contables */}
       {modalReportes && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl space-y-5">
@@ -822,13 +1078,12 @@ export default function VistaDoctor() {
               </div>
               <button
                 onClick={() => setModalReportes(false)}
-                className="text-slate-400 hover:text-slate-600 p-1"
+                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Filtros de Mes y Año */}
             <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200">
               <div>
                 <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1 flex items-center gap-1">
@@ -865,7 +1120,6 @@ export default function VistaDoctor() {
               </div>
             </div>
 
-            {/* Métricas del Mes */}
             {cargandoReporte ? (
               <div className="py-8 text-center text-xs text-slate-400">Calculando métricas del mes...</div>
             ) : resumenReporte ? (
@@ -873,7 +1127,7 @@ export default function VistaDoctor() {
                 <div className="grid grid-cols-2 gap-2.5">
                   <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl">
                     <span className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1">
-                      <Users className="w-3 h-3" /> Consultas
+                      <Users className="w-3.5 h-3.5" /> Consultas
                     </span>
                     <span className="text-lg font-bold text-slate-800 mt-1 block">
                       {resumenReporte.total_consultas}
@@ -882,7 +1136,7 @@ export default function VistaDoctor() {
 
                   <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl">
                     <span className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1">
-                      <Tag className="w-3 h-3" /> Descuentos
+                      <Tag className="w-3.5 h-3.5" /> Descuentos
                     </span>
                     <span className="text-lg font-bold text-rose-600 mt-1 block">
                       -${resumenReporte.total_descuentos.toFixed(2)}
@@ -904,12 +1158,11 @@ export default function VistaDoctor() {
               </div>
             ) : null}
 
-            {/* Botones de acción */}
             <div className="pt-2 flex gap-2">
               <button
                 type="button"
                 onClick={() => setModalReportes(false)}
-                className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-colors"
+                className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
               >
                 Cerrar
               </button>
@@ -917,7 +1170,7 @@ export default function VistaDoctor() {
                 type="button"
                 onClick={handleDescargarReporte}
                 disabled={descargandoReporte || (resumenReporte && resumenReporte.total_consultas === 0)}
-                className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
               >
                 <Download className="w-4 h-4" />
                 {descargandoReporte ? 'Generando...' : 'Descargar Excel / CSV'}
@@ -943,7 +1196,7 @@ export default function VistaDoctor() {
               </div>
               <button
                 onClick={() => setModalHistorial(false)}
-                className="text-slate-400 hover:text-slate-600 p-1"
+                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -1022,7 +1275,7 @@ export default function VistaDoctor() {
               <button
                 type="button"
                 onClick={() => setModalHistorial(false)}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold"
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold cursor-pointer"
               >
                 Cerrar Historial
               </button>
@@ -1046,7 +1299,7 @@ export default function VistaDoctor() {
               </div>
               <button
                 onClick={() => setModalSustitutos(false)}
-                className="text-slate-400 hover:text-slate-600 p-1"
+                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -1080,7 +1333,7 @@ export default function VistaDoctor() {
                           setModalSustitutos(false);
                         }}
                         disabled={yaRecetado}
-                        className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-semibold disabled:opacity-50"
+                        className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-semibold disabled:opacity-50 cursor-pointer"
                       >
                         {yaRecetado ? 'Agregado' : 'Recetar este'}
                       </button>
@@ -1094,7 +1347,7 @@ export default function VistaDoctor() {
               <button
                 type="button"
                 onClick={() => setModalSustitutos(false)}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-medium"
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-medium cursor-pointer"
               >
                 Cerrar
               </button>
@@ -1112,6 +1365,13 @@ export default function VistaDoctor() {
               <p className="text-xs text-slate-400">Alta rápida durante la consulta médica.</p>
             </div>
 
+            {errorModalPaciente && (
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                <span>{errorModalPaciente}</span>
+              </div>
+            )}
+
             <form onSubmit={handleGuardarPaciente} className="space-y-3">
               <div>
                 <label className="text-xs font-semibold text-slate-600 mb-1 block">Nombre Completo *</label>
@@ -1125,16 +1385,48 @@ export default function VistaDoctor() {
                 />
               </div>
 
-              <div>
-                <label className="text-xs font-semibold text-slate-600 mb-1 block">Teléfono (WhatsApp)</label>
+              {!sinTelefonoPac && (
+                <div>
+                  <label className="text-xs font-semibold text-slate-600 mb-1 block">Teléfono (WhatsApp)</label>
+                  <div className="flex gap-2">
+                    <select
+                      value={ladaPac}
+                      onChange={(e) => setLadaPac(e.target.value)}
+                      className="w-24 px-2 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    >
+                      <option value="+52">🇲🇽 +52</option>
+                      <option value="+1">🇺🇸 +1</option>
+                      <option value="+34">🇪🇸 +34</option>
+                      <option value="+54">🇦🇷 +54</option>
+                      <option value="+57">🇨🇴 +57</option>
+                    </select>
+                    <input
+                      type="tel"
+                      maxLength={10}
+                      placeholder="Ej. 3121234567"
+                      value={nuevoPac.telefono}
+                      onChange={(e) => setNuevoPac({ ...nuevoPac, telefono: e.target.value.replace(/\D/g, '') })}
+                      className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      required
+                    />
+                  </div>
+                </div>
+              )}
+
+              <label className="flex items-center gap-2 cursor-pointer pt-0.5">
                 <input
-                  type="text"
-                  placeholder="Ej. 3121234567"
-                  value={nuevoPac.telefono}
-                  onChange={(e) => setNuevoPac({ ...nuevoPac, telefono: e.target.value })}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  type="checkbox"
+                  checked={sinTelefonoPac}
+                  onChange={(e) => {
+                    setSinTelefonoPac(e.target.checked);
+                    if (e.target.checked) setNuevoPac({ ...nuevoPac, telefono: '' });
+                  }}
+                  className="rounded text-emerald-600 focus:ring-emerald-500 w-4 h-4 cursor-pointer"
                 />
-              </div>
+                <span className="text-xs text-slate-600 font-medium select-none">
+                  El paciente no tiene número de teléfono
+                </span>
+              </label>
 
               <div>
                 <label className="text-xs font-semibold text-slate-600 mb-1 block">Correo Electrónico</label>
@@ -1162,13 +1454,13 @@ export default function VistaDoctor() {
                 <button
                   type="button"
                   onClick={() => setModalNuevoPac(false)}
-                  className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-sm font-medium transition-colors"
+                  className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-sm font-medium transition-colors cursor-pointer"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 bg-emerald-950 hover:bg-emerald-900 text-white rounded-xl text-sm font-medium transition-colors"
+                  className="flex-1 py-2.5 bg-emerald-950 hover:bg-emerald-900 text-white rounded-xl text-sm font-medium transition-colors cursor-pointer"
                 >
                   Guardar Paciente
                 </button>

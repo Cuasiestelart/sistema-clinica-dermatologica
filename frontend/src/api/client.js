@@ -24,8 +24,14 @@ export const actualizarProducto = (id, data) =>
 export const getPacientes = (query = '') => 
   api.get(`/pacientes/${query ? `?q=${encodeURIComponent(query)}` : ''}`);
 
+export const getPaciente = (id) => 
+  api.get(`/pacientes/${id}`);
+
 export const crearPaciente = (datosPaciente) => 
   api.post('/pacientes/', datosPaciente);
+
+export const actualizarPaciente = (id, datosParciales) => 
+  api.patch(`/pacientes/${id}`, datosParciales);
 
 export const actualizarNotaPaciente = (id, nota_fija) =>
   api.patch(`/pacientes/${id}/nota`, { nota_fija });
@@ -52,7 +58,7 @@ export const descargarReporteMensual = async (anio, mes) => {
     params: { anio, mes },
     responseType: 'blob'
   });
-  
+
   // Disparar descarga en el navegador
   const blob = new Blob([response.data], { type: 'text/csv;charset=utf-8;' });
   const url = window.URL.createObjectURL(blob);
@@ -78,5 +84,9 @@ export const crearCita = (datosCita) =>
 
 export const actualizarEstadoCita = (citaId, estado) => 
   api.patch(`/citas/${citaId}/estado`, null, { params: { estado } });
+
+// Alias para compatibilidad con VistaAsistente
+export const buscarPacientes = getPacientes;
+export const obtenerCitasPorFecha = (fecha) => getCitas(fecha);
 
 export default api;
