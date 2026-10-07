@@ -14,10 +14,10 @@ export const getProductos = (query = '') =>
 export const getSustitutos = (productoId) => 
   api.get(`/productos/${productoId}/sustitutos`);
 
-export const crearProducto = (data) =>
+export const crearProducto = (data) => 
   api.post('/productos/', data);
 
-export const actualizarProducto = (id, data) =>
+export const actualizarProducto = (id, data) => 
   api.put(`/productos/${id}`, data);
 
 // Endpoints de Pacientes
@@ -33,10 +33,10 @@ export const crearPaciente = (datosPaciente) =>
 export const actualizarPaciente = (id, datosParciales) => 
   api.patch(`/pacientes/${id}`, datosParciales);
 
-export const actualizarNotaPaciente = (id, nota_fija) =>
+export const actualizarNotaPaciente = (id, nota_fija) => 
   api.patch(`/pacientes/${id}/nota`, { nota_fija });
 
-export const getHistorialPaciente = (pacienteId) =>
+export const getHistorialPaciente = (pacienteId) => 
   api.get(`/recetas/paciente/${pacienteId}`);
 
 // Endpoints de Recetas / Consultas
@@ -49,14 +49,23 @@ export const getRecetaPorId = (id) =>
 export const getRecetasPorPaciente = (pacienteId) => 
   api.get(`/recetas/paciente/${pacienteId}`);
 
+// Endpoints de Procedimientos Clínicos
+export const getProcedimientos = (q = '') => {
+  return api.get('/procedimientos/', { params: q ? { q } : {} });
+};
+
+export const crearProcedimiento = (data) => {
+  return api.post('/procedimientos/', data);
+};
+
 // Endpoints de Reportes y Cortes
-export const getResumenMensual = (anio, mes) =>
+export const getResumenMensual = (anio, mes) => 
   api.get('/reportes/resumen-mensual', { params: { anio, mes } });
 
 export const descargarReporteMensual = async (anio, mes) => {
   const response = await api.get('/reportes/exportar-mensual', {
     params: { anio, mes },
-    responseType: 'blob'
+    responseType: 'blob',
   });
 
   // Disparar descarga en el navegador

@@ -7,6 +7,7 @@ from app.models.producto import Producto
 from app.models.paciente import Paciente
 from app.models.receta import Receta, RecetaDetalle
 from app.models.cita import Cita
+from app.routers import procedimientos
 
 # Crear tablas en la base de datos si no existen
 Base.metadata.create_all(bind=engine)
@@ -34,6 +35,7 @@ app.include_router(pacientes.router, tags=["Pacientes"])
 app.include_router(recetas.router, tags=["Recetas"])
 app.include_router(reportes.router)
 app.include_router(citas.router)
+app.include_router(procedimientos.router)
 
 @app.get("/")
 def root():

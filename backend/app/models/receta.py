@@ -1,5 +1,4 @@
 from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime, Float
-from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.database import Base
 from datetime import datetime
@@ -13,7 +12,6 @@ class Receta(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     paciente_id = Column(Integer, ForeignKey("pacientes.id"), nullable=False)
-    # Cambiamos server_default por default=obtener_hora_mexico:
     fecha = Column(DateTime, default=obtener_hora_mexico)
     diagnostico = Column(Text, nullable=True)
     proxima_cita = Column(String(50), nullable=True)
@@ -26,6 +24,7 @@ class Receta(Base):
 
     paciente = relationship("Paciente", back_populates="recetas")
     detalles = relationship("RecetaDetalle", back_populates="receta", cascade="all, delete-orphan")
+    procedimientos = relationship("RecetaProcedimiento", back_populates="receta", cascade="all, delete-orphan")
 
 class RecetaDetalle(Base):
     __tablename__ = "receta_detalles"
@@ -38,3 +37,15 @@ class RecetaDetalle(Base):
 
     receta = relationship("Receta", back_populates="detalles")
     producto = relationship("Producto")
+
+class RecetaProcedimiento(Base):
+    __tablename__ = "receta_procedimientos"
+
+    id = Column(Integer, primary_key=True, index=True)
+    receta_id = Column(Integer, ForeignKey("recetas.id", ondelete="CASCADE"), nullable=False)
+    procedimiento_id = Column(Integer, ForeignKey("procedimientos.id"), nullable=False)
+    precio_cobrado = Column(Float, default=0.0, nullable=False)
+    notas = Column(String(255), nullable=True)
+
+    receta = relationship("Receta", back_populates="procedimientos")
+    procedimiento = relationship("app.models.procedimiento.Procedimiento")

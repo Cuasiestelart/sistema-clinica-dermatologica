@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   UserPlus, 
   Search, 
@@ -24,7 +24,9 @@ import {
   CalendarDays,
   Phone,
   UserCheck,
-  Stethoscope
+  Stethoscope,
+  Scissors,
+  Filter
 } from 'lucide-react';
 import { 
   getProductos, 
@@ -38,25 +40,39 @@ import {
   getResumenMensual,
   descargarReporteMensual,
   getCitas,
-  actualizarEstadoCita
+  actualizarEstadoCita,
+  getProcedimientos,
+  crearProcedimiento
 } from '../api/client';
 
 export default function VistaDoctor() {
+  // Pestaña activa en catálogo: 'PRODUCTOS' o 'PROCEDIMIENTOS'
+  const [tabCatalogo, setTabCatalogo] = useState('PRODUCTOS');
+
+  // Productos / Medicamentos
   const [productos, setProductos] = useState([]);
   const [filtroProd, setFiltroProd] = useState('');
   const [cargandoProd, setCargandoProd] = useState(false);
 
+  // Procedimientos Clínicos
+  const [procedimientos, setProcedimientos] = useState([]);
+  const [filtroProc, setFiltroProc] = useState('');
+  const [cargandoProc, setCargandoProc] = useState(false);
+  const [modalNuevoProc, setModalNuevoProc] = useState(false);
+  const [nuevoProc, setNuevoProc] = useState({ nombre: '', precio_base: '', descripcion: '' });
+  const [errorModalProc, setErrorModalProc] = useState(null);
+
+  // Sustitutos
   const [modalSustitutos, setModalSustitutos] = useState(false);
   const [productoAgotado, setProductoAgotado] = useState(null);
   const [sustitutos, setSustitutos] = useState([]);
   const [cargandoSustitutos, setCargandoSustitutos] = useState(false);
 
+  // Pacientes
   const [busquedaPac, setBusquedaPac] = useState('');
   const [pacientesSugeridos, setPacientesSugeridos] = useState([]);
   const [pacienteSeleccionado, setPacienteSeleccionado] = useState(null);
   const [modalNuevoPac, setModalNuevoPac] = useState(false);
-  
-  // Estado de Nuevo Paciente
   const [nuevoPac, setNuevoPac] = useState({ nombre_completo: '', telefono: '', email: '', nota_fija: '' });
   const [ladaPac, setLadaPac] = useState('+52');
   const [sinTelefonoPac, setSinTelefonoPac] = useState(false);
@@ -65,11 +81,15 @@ export default function VistaDoctor() {
   const [notaPaciente, setNotaPaciente] = useState('');
   const [guardandoNota, setGuardandoNota] = useState(false);
 
+  // Historial y Filtros de Búsqueda
   const [modalHistorial, setModalHistorial] = useState(false);
   const [historialRecetas, setHistorialRecetas] = useState([]);
   const [cargandoHistorial, setCargandoHistorial] = useState(false);
+  const [busquedaHistorial, setBusquedaHistorial] = useState('');
+  const [mesFiltroHistorial, setMesFiltroHistorial] = useState('TODOS');
+  const [anioFiltroHistorial, setAnioFiltroHistorial] = useState('TODOS');
 
-  // Estados de Agenda del Doctor
+  // Agenda del Doctor
   const hoyStr = new Date().toISOString().split('T')[0];
   const [modalAgenda, setModalAgenda] = useState(false);
   const [fechaAgenda, setFechaAgenda] = useState(hoyStr);
@@ -77,18 +97,19 @@ export default function VistaDoctor() {
   const [citasAgenda, setCitasAgenda] = useState([]);
   const [cargandoAgenda, setCargandoAgenda] = useState(false);
 
-  // Estados de prescripción clínica
+  // Prescripción y Procedimientos en Consulta
   const [itemsReceta, setItemsReceta] = useState([]);
+  const [procedimientosReceta, setProcedimientosReceta] = useState([]);
   const [diagnostico, setDiagnostico] = useState('');
   const [proxCita, setProxCita] = useState('');
 
-  // Estados de honorarios y cobro
+  // Honorarios y Cobro
   const [costoBase, setCostoBase] = useState(800);
   const [tipoDescuento, setTipoDescuento] = useState('NORMAL');
   const [totalConsulta, setTotalConsulta] = useState(800);
   const [motivoManual, setMotivoManual] = useState('');
 
-  // Estados para Modal de Reportes / Contador
+  // Reportes / Contador
   const ahora = new Date();
   const [modalReportes, setModalReportes] = useState(false);
   const [anioReporte, setAnioReporte] = useState(ahora.getFullYear());
@@ -125,8 +146,10 @@ export default function VistaDoctor() {
     return Number(prod.precio_base ?? prod.precio_venta ?? prod.precio ?? 0);
   };
 
+  // Carga inicial
   useEffect(() => {
     cargarProductos();
+    cargarCatalogoProcedimientos();
   }, []);
 
   const cargarProductos = async (termino = '') => {
@@ -138,6 +161,18 @@ export default function VistaDoctor() {
       console.error('Error al cargar productos:', err);
     } finally {
       setCargandoProd(false);
+    }
+  };
+
+  const cargarCatalogoProcedimientos = async (termino = '') => {
+    try {
+      setCargandoProc(true);
+      const res = await getProcedimientos(termino);
+      setProcedimientos(res.data);
+    } catch (err) {
+      console.error('Error al cargar procedimientos:', err);
+    } finally {
+      setCargandoProc(false);
     }
   };
 
@@ -164,7 +199,39 @@ export default function VistaDoctor() {
     }
   };
 
-  // Cargar Citas de la Agenda
+  // Recalcular total automáticamente al agregar/quitar procedimientos o costo base
+  const sumaProcedimientos = useMemo(() => {
+    return procedimientosReceta.reduce((acc, p) => acc + Number(p.precio_cobrado || 0), 0);
+  }, [procedimientosReceta]);
+
+  const subtotalBruto = useMemo(() => {
+    return Number(costoBase || 0) + sumaProcedimientos;
+  }, [costoBase, sumaProcedimientos]);
+
+  const recalcularCobro = (preset, baseBruto = subtotalBruto) => {
+    if (preset === 'NORMAL') {
+      setTotalConsulta(baseBruto);
+    } else if (preset === 'INAPAM') {
+      setTotalConsulta(Math.round(baseBruto * 0.9));
+    } else if (preset === 'CONVENIO') {
+      setTotalConsulta(Math.round(baseBruto * 0.8));
+    } else if (preset === 'CORTESIA') {
+      setTotalConsulta(0);
+    }
+  };
+
+  useEffect(() => {
+    if (tipoDescuento !== 'MANUAL') {
+      recalcularCobro(tipoDescuento, subtotalBruto);
+    }
+  }, [subtotalBruto, tipoDescuento]);
+
+  const aplicarPreset = (tipo) => {
+    setTipoDescuento(tipo);
+    recalcularCobro(tipo, subtotalBruto);
+  };
+
+  // Manejo de Agenda
   const cargarCitasAgenda = async (fecha = fechaAgenda, esp = filtroEspecialidadAgenda) => {
     try {
       setCargandoAgenda(true);
@@ -188,38 +255,29 @@ export default function VistaDoctor() {
     }
   }, [modalAgenda, fechaAgenda, filtroEspecialidadAgenda]);
 
-  // Cargar paciente desde la agenda directo por ID
   const atenderDesdeAgenda = async (cita) => {
     const pId = cita.paciente_id || cita.paciente?.id;
-    if (!pId) {
-      console.error('No se encontró ID de paciente en la cita:', cita);
-      return;
-    }
+    if (!pId) return;
 
     try {
-      // 1. Obtenemos el paciente completo de la BD por su ID
       const resPaciente = await getPaciente(pId);
       setPacienteSeleccionado(resPaciente.data);
     } catch (err) {
-      console.error('Error al consultar paciente por ID:', err);
-      if (cita.paciente) {
-        setPacienteSeleccionado(cita.paciente);
-      }
+      if (cita.paciente) setPacienteSeleccionado(cita.paciente);
     }
 
-    // 2. Cerramos el modal de inmediato
     setModalAgenda(false);
 
-    // 3. Cambiamos el estado a 'en_atencion' (el estado válido en tu backend)
     try {
       if (cita.estado !== 'completada' && cita.estado !== 'cancelada') {
         await actualizarEstadoCita(cita.id, 'en_atencion');
       }
     } catch (err) {
-      console.warn('No se pudo actualizar el estado de la cita:', err.response?.data || err.message);
+      console.warn('No se pudo actualizar estado de cita:', err);
     }
   };
 
+  // Reportes
   useEffect(() => {
     if (modalReportes) {
       cargarResumenReporte();
@@ -249,6 +307,7 @@ export default function VistaDoctor() {
     }
   };
 
+  // Guardar nota fija
   const handleGuardarNota = async () => {
     if (!pacienteSeleccionado) return;
     if (notaPaciente === (pacienteSeleccionado.nota_fija || '')) return;
@@ -264,6 +323,7 @@ export default function VistaDoctor() {
     }
   };
 
+  // Búsqueda de pacientes
   useEffect(() => {
     const delayDebounce = setTimeout(async () => {
       const query = busquedaPac.trim();
@@ -282,19 +342,7 @@ export default function VistaDoctor() {
     return () => clearTimeout(delayDebounce);
   }, [busquedaPac, pacienteSeleccionado]);
 
-  const aplicarPreset = (tipo) => {
-    setTipoDescuento(tipo);
-    if (tipo === 'NORMAL') {
-      setTotalConsulta(costoBase);
-    } else if (tipo === 'INAPAM') {
-      setTotalConsulta(Math.round(costoBase * 0.9));
-    } else if (tipo === 'CONVENIO') {
-      setTotalConsulta(Math.round(costoBase * 0.8));
-    } else if (tipo === 'CORTESIA') {
-      setTotalConsulta(0);
-    }
-  };
-
+  // Manejo de productos en receta
   const agregarAReceta = (prod) => {
     if (itemsReceta.some(i => i.producto_id === prod.id)) return;
     setItemsReceta([
@@ -320,6 +368,49 @@ export default function VistaDoctor() {
     setItemsReceta(itemsReceta.filter(item => item.producto_id !== producto_id));
   };
 
+  // Manejo de procedimientos en consulta
+  const agregarProcedimientoAReceta = (proc) => {
+    if (procedimientosReceta.some(p => p.procedimiento_id === proc.id)) return;
+    setProcedimientosReceta([
+      ...procedimientosReceta,
+      {
+        procedimiento_id: proc.id,
+        nombre: proc.nombre,
+        precio_cobrado: Number(proc.precio_base || 0),
+        notas: ''
+      }
+    ]);
+  };
+
+  const actualizarProcedimientoItem = (procedimiento_id, campo, valor) => {
+    setProcedimientosReceta(procedimientosReceta.map(p => 
+      p.procedimiento_id === procedimiento_id ? { ...p, [campo]: valor } : p
+    ));
+  };
+
+  const eliminarProcedimientoItem = (procedimiento_id) => {
+    setProcedimientosReceta(procedimientosReceta.filter(p => p.procedimiento_id !== procedimiento_id));
+  };
+
+  const handleCrearNuevoProcedimiento = async (e) => {
+    e.preventDefault();
+    setErrorModalProc(null);
+    try {
+      const res = await crearProcedimiento({
+        nombre: nuevoProc.nombre.trim(),
+        precio_base: parseFloat(nuevoProc.precio_base) || 0,
+        descripcion: nuevoProc.descripcion.trim() || null
+      });
+      setProcedimientos(prev => [...prev, res.data].sort((a, b) => a.nombre.localeCompare(b.nombre)));
+      agregarProcedimientoAReceta(res.data);
+      setModalNuevoProc(false);
+      setNuevoProc({ nombre: '', precio_base: '', descripcion: '' });
+    } catch (err) {
+      setErrorModalProc(err.response?.data?.detail || 'Error al guardar procedimiento.');
+    }
+  };
+
+  // Modal sustitutos
   const handleAbrirSustitutos = async (prod) => {
     setProductoAgotado(prod);
     setModalSustitutos(true);
@@ -328,13 +419,13 @@ export default function VistaDoctor() {
       const res = await getSustitutos(prod.id);
       setSustitutos(res.data);
     } catch (err) {
-      console.error('Error al cargar sustitutos:', err);
       setSustitutos([]);
     } finally {
       setCargandoSustitutos(false);
     }
   };
 
+  // Guardar Paciente
   const handleGuardarPaciente = async (e) => {
     e.preventDefault();
     setErrorModalPaciente(null);
@@ -371,6 +462,7 @@ export default function VistaDoctor() {
     }
   };
 
+  // Emitir Receta
   const handleEmitirReceta = async () => {
     if (!pacienteSeleccionado) {
       setErrorEnvio('Selecciona o registra un paciente antes de emitir la receta.');
@@ -379,7 +471,7 @@ export default function VistaDoctor() {
 
     setErrorEnvio(null);
 
-    const descPct = costoBase > 0 ? ((costoBase - totalConsulta) / costoBase) * 100 : 0;
+    const descPct = subtotalBruto > 0 ? ((subtotalBruto - totalConsulta) / subtotalBruto) * 100 : 0;
     const motivoFinal = tipoDescuento === 'MANUAL' 
       ? (motivoManual.trim() || 'Ajuste libre') 
       : (tipoDescuento === 'NORMAL' ? 'Tarifa estándar' : tipoDescuento);
@@ -396,17 +488,22 @@ export default function VistaDoctor() {
         producto_id: i.producto_id,
         cantidad: parseInt(i.cantidad_recetada, 10) || 1,
         indicaciones: i.indicaciones_posologia || 'Aplicar según indicación médica'
+      })),
+      procedimientos: procedimientosReceta.map(p => ({
+        procedimiento_id: p.procedimiento_id,
+        precio_cobrado: Number(p.precio_cobrado || 0),
+        notas: p.notas || null
       }))
     };
 
     try {
       const res = await crearReceta(payload);
-      setMensajeExito(`¡Receta emitida con éxito! Folio registrado: #${res.data.id}`);
+      setMensajeExito(`¡Consulta guardada con éxito! Folio registrado: #${res.data.id}`);
       setItemsReceta([]);
+      setProcedimientosReceta([]);
       setDiagnostico('');
       setProxCita('');
       setTipoDescuento('NORMAL');
-      setTotalConsulta(costoBase);
       setMotivoManual('');
       cargarHistorial(pacienteSeleccionado.id);
       setTimeout(() => setMensajeExito(null), 6000);
@@ -415,9 +512,45 @@ export default function VistaDoctor() {
       const textoError = Array.isArray(detalle) 
         ? detalle.map(d => `${d.loc.slice(-1)}: ${d.msg}`).join(' | ') 
         : (detalle || err.message);
-      setErrorEnvio('Error al guardar receta: ' + textoError);
+      setErrorEnvio('Error al guardar consulta: ' + textoError);
     }
   };
+
+  // Filtro inteligente en el Historial Clínico
+  const historialFiltrado = useMemo(() => {
+    return historialRecetas.filter(rec => {
+      // Filtro de texto
+      const q = busquedaHistorial.toLowerCase().trim();
+      let coincideTexto = true;
+      if (q) {
+        const enDiag = (rec.diagnostico || '').toLowerCase().includes(q);
+        const enFolio = String(rec.id).includes(q);
+        const enProds = (rec.detalles || []).some(d => 
+          (d.producto?.nombre || '').toLowerCase().includes(q) ||
+          (d.indicaciones || '').toLowerCase().includes(q)
+        );
+        const enProcs = (rec.procedimientos || []).some(p => 
+          (p.procedimiento?.nombre || '').toLowerCase().includes(q) ||
+          (p.notas || '').toLowerCase().includes(q)
+        );
+        coincideTexto = enDiag || enFolio || enProds || enProcs;
+      }
+
+      // Filtro de fecha
+      let coincideFecha = true;
+      if (rec.fecha) {
+        const fechaObj = new Date(rec.fecha);
+        if (anioFiltroHistorial !== 'TODOS' && fechaObj.getFullYear() !== Number(anioFiltroHistorial)) {
+          coincideFecha = false;
+        }
+        if (mesFiltroHistorial !== 'TODOS' && (fechaObj.getMonth() + 1) !== Number(mesFiltroHistorial)) {
+          coincideFecha = false;
+        }
+      }
+
+      return coincideTexto && coincideFecha;
+    });
+  }, [historialRecetas, busquedaHistorial, mesFiltroHistorial, anioFiltroHistorial]);
 
   const calcularTiempoPasado = (fechaStr) => {
     if (!fechaStr) return '';
@@ -435,7 +568,6 @@ export default function VistaDoctor() {
     return `Hace ${difAnios} ${difAnios === 1 ? 'año' : 'años'}`;
   };
 
-  // Extraer hora formateada (HH:MM) desde fecha_hora
   const formatearHoraCita = (cita) => {
     if (cita.hora) return cita.hora;
     if (cita.fecha_hora) {
@@ -451,7 +583,7 @@ export default function VistaDoctor() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold text-slate-800">Consulta Dermatológica</h1>
-          <p className="text-xs text-slate-400">Expedición clínica y registro de honorarios</p>
+          <p className="text-xs text-slate-400">Expedición clínica, procedimientos y honorarios</p>
         </div>
         
         <div className="flex items-center gap-2">
@@ -491,7 +623,7 @@ export default function VistaDoctor() {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* Columna Izquierda: Paciente + Catálogo + Libreta de Notas */}
+        {/* Columna Izquierda: Paciente + Catálogo (Fórmulas / Procedimientos) + Notas */}
         <div className="lg:col-span-7 space-y-5">
           
           {/* Tarjeta de Paciente */}
@@ -576,100 +708,216 @@ export default function VistaDoctor() {
             )}
           </div>
 
-          {/* Catálogo de Fórmulas */}
+          {/* Catálogo Dividido: Fórmulas vs Procedimientos */}
           <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                Catálogo de Fórmulas y Medicamentos
-              </h2>
-              <span className="text-xs text-slate-400">
-                {productos.length} opciones disponibles
-              </span>
+            {/* Pestañas de Selección */}
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-3">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setTabCatalogo('PRODUCTOS')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    tabCatalogo === 'PRODUCTOS'
+                      ? 'bg-slate-900 text-white shadow-xs'
+                      : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100'
+                  }`}
+                >
+                  <Pill className="w-3.5 h-3.5" />
+                  Medicamentos ({productos.length})
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setTabCatalogo('PROCEDIMIENTOS')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    tabCatalogo === 'PROCEDIMIENTOS'
+                      ? 'bg-emerald-800 text-white shadow-xs'
+                      : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100'
+                  }`}
+                >
+                  <Scissors className="w-3.5 h-3.5" />
+                  Tratamientos Clínicos ({procedimientos.length})
+                </button>
+              </div>
+
+              {tabCatalogo === 'PROCEDIMIENTOS' && (
+                <button
+                  type="button"
+                  onClick={() => setModalNuevoProc(true)}
+                  className="flex items-center gap-1 text-xs text-emerald-700 hover:text-emerald-900 font-bold bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Nuevo Tratamiento
+                </button>
+              )}
             </div>
 
-            <div className="relative mb-3">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
-              <input
-                type="text"
-                placeholder="Buscar por activo, nombre o indicación..."
-                value={filtroProd}
-                onChange={(e) => {
-                  setFiltroProd(e.target.value);
-                  cargarProductos(e.target.value);
-                }}
-                className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              />
-            </div>
+            {/* TAB PRODUCTOS */}
+            {tabCatalogo === 'PRODUCTOS' && (
+              <>
+                <div className="relative mb-3">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                  <input
+                    type="text"
+                    placeholder="Buscar por activo, fórmula o nombre..."
+                    value={filtroProd}
+                    onChange={(e) => {
+                      setFiltroProd(e.target.value);
+                      cargarProductos(e.target.value);
+                    }}
+                    className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
 
-            {cargandoProd ? (
-              <div className="py-12 text-center text-sm text-slate-400">Actualizando catálogo...</div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[320px] overflow-y-auto pr-1">
-                {productos.map(prod => {
-                  const yaRecetado = itemsReceta.some(i => i.producto_id === prod.id);
-                  const precio = obtenerPrecio(prod);
-                  const sinStock = (prod.stock_actual ?? 0) <= 0;
+                {cargandoProd ? (
+                  <div className="py-12 text-center text-sm text-slate-400">Actualizando catálogo...</div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[320px] overflow-y-auto pr-1">
+                    {productos.map(prod => {
+                      const yaRecetado = itemsReceta.some(i => i.producto_id === prod.id);
+                      const precio = obtenerPrecio(prod);
+                      const sinStock = (prod.stock_actual ?? 0) <= 0;
 
-                  return (
-                    <div 
-                      key={prod.id}
-                      className={`p-3.5 border rounded-xl flex flex-col justify-between transition-colors ${
-                        sinStock 
-                          ? 'border-rose-100 bg-rose-50/20' 
-                          : 'border-slate-100 bg-slate-50/50 hover:border-emerald-200'
-                      }`}
-                    >
-                      <div>
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400">
-                            {prod.marca?.nombre || 'Genérico'}
-                          </span>
-                          <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
-                            sinStock ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-800'
-                          }`}>
-                            {sinStock ? 'Agotado (0)' : `Stock: ${prod.stock_actual}`}
-                          </span>
+                      return (
+                        <div 
+                          key={prod.id}
+                          className={`p-3.5 border rounded-xl flex flex-col justify-between transition-colors ${
+                            sinStock 
+                              ? 'border-rose-100 bg-rose-50/20' 
+                              : 'border-slate-100 bg-slate-50/50 hover:border-emerald-200'
+                          }`}
+                        >
+                          <div>
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400">
+                                {prod.marca?.nombre || 'Genérico'}
+                              </span>
+                              <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
+                                sinStock ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-800'
+                              }`}>
+                                {sinStock ? 'Agotado (0)' : `Stock: ${prod.stock_actual}`}
+                              </span>
+                            </div>
+                            <h4 className="font-semibold text-sm text-slate-800 leading-tight">{prod.nombre}</h4>
+                            <p className="text-xs text-slate-500 mt-1 line-clamp-1">
+                              {prod.activo_dermatologico || 'Fórmula magistral / comercial'}
+                            </p>
+                          </div>
+
+                          <div className="mt-4 flex items-center justify-between pt-2 border-t border-slate-200/60">
+                            <span className="font-bold text-slate-900 text-sm">
+                              ${precio.toFixed(2)} MXN
+                            </span>
+
+                            <div className="flex items-center gap-1.5">
+                              {sinStock ? (
+                                <button
+                                  onClick={() => handleAbrirSustitutos(prod)}
+                                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-amber-100 text-amber-900 hover:bg-amber-200 transition-colors cursor-pointer"
+                                  title="Buscar alternativas con stock"
+                                >
+                                  <RefreshCw className="w-3 h-3" /> Sustitutos
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => agregarAReceta(prod)}
+                                  disabled={yaRecetado}
+                                  className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
+                                    yaRecetado 
+                                      ? 'bg-slate-200 text-slate-400 cursor-not-allowed' 
+                                      : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm'
+                                  }`}
+                                >
+                                  <Plus className="w-3.5 h-3.5" />
+                                  {yaRecetado ? 'Agregado' : 'Recetar'}
+                                </button>
+                              )}
+                            </div>
+                          </div>
                         </div>
-                        <h4 className="font-semibold text-sm text-slate-800 leading-tight">{prod.nombre}</h4>
-                        <p className="text-xs text-slate-500 mt-1 line-clamp-1">
-                          {prod.activo_dermatologico || 'Fórmula magistral / comercial'}
-                        </p>
-                      </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
+            )}
 
-                      <div className="mt-4 flex items-center justify-between pt-2 border-t border-slate-200/60">
-                        <span className="font-bold text-slate-900 text-sm">
-                          ${precio.toFixed(2)} MXN
-                        </span>
+            {/* TAB PROCEDIMIENTOS */}
+            {tabCatalogo === 'PROCEDIMIENTOS' && (
+              <>
+                <div className="relative mb-3">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                  <input
+                    type="text"
+                    placeholder="Buscar tratamiento (ej. Cauterización, Crioterapia, Punch)..."
+                    value={filtroProc}
+                    onChange={(e) => {
+                      setFiltroProc(e.target.value);
+                      cargarCatalogoProcedimientos(e.target.value);
+                    }}
+                    className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
 
-                        <div className="flex items-center gap-1.5">
-                          {sinStock ? (
+                {cargandoProc ? (
+                  <div className="py-12 text-center text-sm text-slate-400">Cargando tratamientos...</div>
+                ) : procedimientos.length === 0 ? (
+                  <div className="py-10 text-center text-slate-400 text-xs">
+                    No hay tratamientos registrados.{' '}
+                    <button 
+                      onClick={() => setModalNuevoProc(true)}
+                      className="text-emerald-700 font-bold underline cursor-pointer"
+                    >
+                      Dar de alta uno nuevo
+                    </button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[320px] overflow-y-auto pr-1">
+                    {procedimientos.map(proc => {
+                      const yaAgregado = procedimientosReceta.some(p => p.procedimiento_id === proc.id);
+                      return (
+                        <div 
+                          key={proc.id}
+                          className="p-3.5 border border-slate-200/90 bg-white rounded-xl flex flex-col justify-between hover:border-emerald-300 transition-colors shadow-2xs"
+                        >
+                          <div>
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-[10px] uppercase font-bold tracking-wider text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded">
+                                Procedimiento Clínico
+                              </span>
+                            </div>
+                            <h4 className="font-semibold text-sm text-slate-800 leading-tight">{proc.nombre}</h4>
+                            {proc.descripcion && (
+                              <p className="text-xs text-slate-500 mt-1 line-clamp-2">
+                                {proc.descripcion}
+                              </p>
+                            )}
+                          </div>
+
+                          <div className="mt-4 flex items-center justify-between pt-2 border-t border-slate-100">
+                            <span className="font-bold text-emerald-950 text-sm">
+                              ${Number(proc.precio_base || 0).toFixed(2)} MXN
+                            </span>
+
                             <button
-                              onClick={() => handleAbrirSustitutos(prod)}
-                              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-amber-100 text-amber-900 hover:bg-amber-200 transition-colors cursor-pointer"
-                              title="Buscar alternativas con stock"
-                            >
-                              <RefreshCw className="w-3 h-3" /> Sustitutos
-                            </button>
-                          ) : (
-                            <button
-                              onClick={() => agregarAReceta(prod)}
-                              disabled={yaRecetado}
-                              className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
-                                yaRecetado 
+                              type="button"
+                              onClick={() => agregarProcedimientoAReceta(proc)}
+                              disabled={yaAgregado}
+                              className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                                yaAgregado 
                                   ? 'bg-slate-200 text-slate-400 cursor-not-allowed' 
-                                  : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm'
+                                  : 'bg-emerald-800 hover:bg-emerald-900 text-white shadow-sm'
                               }`}
                             >
                               <Plus className="w-3.5 h-3.5" />
-                              {yaRecetado ? 'Agregado' : 'Recetar'}
+                              {yaAgregado ? 'Cargado' : '+ Agregar a cobro'}
                             </button>
-                          )}
+                          </div>
                         </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
             )}
           </div>
 
@@ -696,7 +944,7 @@ export default function VistaDoctor() {
               </div>
 
               <textarea
-                rows={6}
+                rows={5}
                 value={notaPaciente}
                 onChange={(e) => setNotaPaciente(e.target.value)}
                 onBlur={handleGuardarNota}
@@ -715,16 +963,21 @@ export default function VistaDoctor() {
 
         </div>
 
-        {/* Columna Derecha: Canasta de Receta y Cobro */}
+        {/* Columna Derecha: Canasta de Receta, Procedimientos Realizados y Cobro */}
         <div className="lg:col-span-5 bg-white p-5 rounded-2xl shadow-sm border border-slate-100 space-y-4">
           <div className="flex items-center justify-between pb-3 border-b border-slate-100">
             <div>
               <h2 className="font-bold text-slate-800">Receta Médica Digital</h2>
-              <p className="text-xs text-slate-400">Folio y prescripción en tiempo real</p>
+              <p className="text-xs text-slate-400">Prescripción y tratamientos realizados</p>
             </div>
-            <span className="w-7 h-7 flex items-center justify-center bg-emerald-100 text-emerald-800 rounded-full font-bold text-xs">
-              {itemsReceta.length}
-            </span>
+            <div className="flex items-center gap-1.5">
+              <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-full font-bold text-xs" title="Fórmulas recetadas">
+                {itemsReceta.length} meds
+              </span>
+              <span className="px-2 py-0.5 bg-blue-100 text-blue-900 rounded-full font-bold text-xs" title="Procedimientos clínicos">
+                {procedimientosReceta.length} proc
+              </span>
+            </div>
           </div>
 
           <div>
@@ -733,19 +986,77 @@ export default function VistaDoctor() {
             </label>
             <input
               type="text"
-              placeholder="Ej. Acné comedónico moderado en mejillas"
+              placeholder="Ej. Acné comedónico severo, Verruga vulgar"
               value={diagnostico}
               onChange={(e) => setDiagnostico(e.target.value)}
               className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
             />
           </div>
 
-          {/* Lista de productos recetados */}
-          <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
+          {/* Bloque: Procedimientos Realizados en el Consultorio */}
+          {procedimientosReceta.length > 0 && (
+            <div className="space-y-2 p-3 bg-blue-50/60 border border-blue-200/80 rounded-xl">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-blue-950 flex items-center gap-1">
+                  <Scissors className="w-3.5 h-3.5 text-blue-700" /> Tratamientos Realizados (Se cobran)
+                </span>
+                <span className="text-xs font-bold text-blue-900">
+                  +${sumaProcedimientos.toFixed(2)} MXN
+                </span>
+              </div>
+
+              <div className="space-y-2">
+                {procedimientosReceta.map(procItem => (
+                  <div key={procItem.procedimiento_id} className="p-2.5 bg-white border border-blue-200 rounded-lg text-xs space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-800">{procItem.nombre}</span>
+                      <button 
+                        type="button" 
+                        onClick={() => eliminarProcedimientoItem(procItem.procedimiento_id)}
+                        className="text-slate-400 hover:text-rose-600 cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-12 gap-2">
+                      <div className="col-span-5">
+                        <label className="text-[10px] text-slate-400 font-semibold block">Costo Cobrado ($):</label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={procItem.precio_cobrado}
+                          onChange={(e) => actualizarProcedimientoItem(procItem.procedimiento_id, 'precio_cobrado', parseFloat(e.target.value) || 0)}
+                          className="w-full px-2 py-1 border border-slate-200 rounded text-xs font-bold text-emerald-950"
+                        />
+                      </div>
+                      <div className="col-span-7">
+                        <label className="text-[10px] text-slate-400 font-semibold block">Notas / Detalles clínicos:</label>
+                        <input
+                          type="text"
+                          placeholder="Ej. 3 lesiones en cuello"
+                          value={procItem.notas}
+                          onChange={(e) => actualizarProcedimientoItem(procItem.procedimiento_id, 'notas', e.target.value)}
+                          className="w-full px-2 py-1 border border-slate-200 rounded text-xs"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Lista de medicamentos recetados */}
+          <div className="space-y-3 max-h-[260px] overflow-y-auto pr-1">
+            <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400">
+              Prescripción Farmacológica
+            </label>
             {itemsReceta.length === 0 ? (
-              <div className="py-10 text-center text-slate-400 space-y-2">
-                <FileText className="w-8 h-8 mx-auto text-slate-300 stroke-[1.5]" />
-                <p className="text-xs">No has añadido productos a la receta.<br />Selecciona del catálogo a la izquierda.</p>
+              <div className="py-6 text-center text-slate-400 space-y-1 bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
+                <FileText className="w-6 h-6 mx-auto text-slate-300 stroke-[1.5]" />
+                <p className="text-xs">No has añadido medicamentos a la receta.</p>
               </div>
             ) : (
               itemsReceta.map(item => (
@@ -802,14 +1113,14 @@ export default function VistaDoctor() {
             />
           </div>
 
-          {/* Bloque de Honorarios de Consulta */}
+          {/* Bloque de Honorarios y Liquidación de Consulta */}
           <div className="p-4 bg-slate-100/90 border border-slate-200/90 rounded-2xl space-y-3">
             <div className="flex items-center justify-between pb-2 border-b border-slate-200/80">
               <span className="text-[11px] font-bold uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
-                <DollarSign className="w-3.5 h-3.5 text-emerald-600" /> Honorarios Consulta
+                <DollarSign className="w-3.5 h-3.5 text-emerald-600" /> Honorarios y Procedimientos
               </span>
               <div className="flex items-center gap-1.5 text-xs bg-white px-2 py-1 rounded-lg border border-slate-200 shadow-sm">
-                <span className="text-slate-400 font-medium">Base: $</span>
+                <span className="text-slate-400 font-medium">Consulta: $</span>
                 <input
                   type="text"
                   value={costoBase.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -817,16 +1128,19 @@ export default function VistaDoctor() {
                     const soloNumeros = e.target.value.replace(/[^0-9.]/g, '');
                     const val = Number(soloNumeros) || 0;
                     setCostoBase(val);
-                    if (tipoDescuento === 'NORMAL') setTotalConsulta(val);
-                    else if (tipoDescuento === 'INAPAM') setTotalConsulta(Math.round(val * 0.9));
-                    else if (tipoDescuento === 'CONVENIO') setTotalConsulta(Math.round(val * 0.8));
-                    else if (tipoDescuento === 'CORTESIA') setTotalConsulta(0);
                   }}
                   className="w-16 text-right font-bold text-slate-800 text-xs focus:outline-none"
                 />
                 <span className="text-slate-400 font-mono text-[10px]">MXN</span>
               </div>
             </div>
+
+            {sumaProcedimientos > 0 && (
+              <div className="flex justify-between text-xs text-slate-600 font-medium px-1">
+                <span>Subtotal (Consulta + Tratamientos):</span>
+                <span className="font-bold text-slate-800">${subtotalBruto.toFixed(2)} MXN</span>
+              </div>
+            )}
 
             <div className="flex p-1 bg-slate-200/80 rounded-xl gap-1">
               {[
@@ -865,7 +1179,7 @@ export default function VistaDoctor() {
                       type="button"
                       onClick={() => aplicarPreset('NORMAL')}
                       className="text-xs text-slate-400 hover:text-rose-600 font-bold px-1 cursor-pointer"
-                      title="Volver a tarifa normal"
+                      title="Volver a tarifa estándar"
                     >
                       ✕
                     </button>
@@ -893,11 +1207,6 @@ export default function VistaDoctor() {
                       min="0"
                       step="0.01"
                       value={totalConsulta}
-                      onKeyDown={(e) => {
-                        if (e.key === '-' || e.key === 'e' || e.key === 'E') {
-                          e.preventDefault();
-                        }
-                      }}
                       onChange={(e) => {
                         const val = parseFloat(e.target.value);
                         setTotalConsulta(isNaN(val) ? 0 : Math.max(0, val));
@@ -925,265 +1234,11 @@ export default function VistaDoctor() {
       </div>
 
       {/* ======================================================== */}
-      {/* MODAL / AGENDA DE CONSULTAS DEL DOCTOR                   */}
+      {/* MODAL / HISTORIAL CLÍNICO CON BUSCADOR Y FILTROS         */}
       {/* ======================================================== */}
-      {modalAgenda && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-xl w-full p-6 shadow-xl space-y-4 max-h-[85vh] flex flex-col">
-            <div className="flex items-start justify-between pb-3 border-b border-slate-100">
-              <div>
-                <h3 className="font-bold text-slate-800 text-lg flex items-center gap-2">
-                  <CalendarDays className="w-5 h-5 text-emerald-600" />
-                  Agenda Médica
-                </h3>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  Pacientes citados para consulta médica dermatológica
-                </p>
-              </div>
-              <button
-                onClick={() => setModalAgenda(false)}
-                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Selector de Fecha y Especialidad */}
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-200">
-              <div className="flex items-center gap-2 w-full sm:w-auto">
-                <span className="text-xs font-semibold text-slate-600">Fecha:</span>
-                <input
-                  type="date"
-                  value={fechaAgenda}
-                  onChange={(e) => setFechaAgenda(e.target.value)}
-                  className="text-xs font-semibold text-slate-800 bg-white border border-slate-200 px-2.5 py-1 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
-                />
-              </div>
-
-              <div className="flex items-center gap-1 w-full sm:w-auto justify-end">
-                <button
-                  type="button"
-                  onClick={() => setFiltroEspecialidadAgenda('Dermatología')}
-                  className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-colors cursor-pointer ${
-                    filtroEspecialidadAgenda === 'Dermatología'
-                      ? 'bg-slate-900 text-white'
-                      : 'text-slate-600 hover:bg-slate-200'
-                  }`}
-                >
-                  Dermatología
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFiltroEspecialidadAgenda('TODAS')}
-                  className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-colors cursor-pointer ${
-                    filtroEspecialidadAgenda === 'TODAS'
-                      ? 'bg-slate-900 text-white'
-                      : 'text-slate-600 hover:bg-slate-200'
-                  }`}
-                >
-                  Todas
-                </button>
-              </div>
-            </div>
-
-            {/* Listado de Citas */}
-            <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">
-              {cargandoAgenda ? (
-                <div className="py-12 text-center text-xs text-slate-400">Cargando agenda médica...</div>
-              ) : citasAgenda.length === 0 ? (
-                <div className="py-12 text-center text-slate-400 space-y-2">
-                  <Calendar className="w-8 h-8 mx-auto text-slate-300 stroke-[1.5]" />
-                  <p className="text-xs font-medium">No hay consultas médicas programadas para esta fecha.</p>
-                </div>
-              ) : (
-                citasAgenda.map((cita) => {
-                  let badge = 'bg-slate-100 text-slate-600 border-slate-200';
-                  if (cita.estado === 'en_espera') badge = 'bg-amber-100 text-amber-900 border-amber-300 animate-pulse font-bold';
-                  if (cita.estado === 'en_atencion') badge = 'bg-blue-100 text-blue-900 border-blue-300 font-bold';
-                  if (cita.estado === 'completada') badge = 'bg-emerald-100 text-emerald-900 border-emerald-300';
-                  if (cita.estado === 'cancelada') badge = 'bg-rose-100 text-rose-700 border-rose-200 line-through';
-
-                  return (
-                    <div 
-                      key={cita.id}
-                      className="p-3 bg-slate-50/80 border border-slate-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:border-slate-300 transition-colors"
-                    >
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-mono font-bold bg-white px-2 py-0.5 rounded border border-slate-200 text-slate-700">
-                            {formatearHoraCita(cita)}
-                          </span>
-                          <h4 className="text-sm font-bold text-slate-800">
-                            {cita.paciente?.nombre_completo || `Paciente #${cita.paciente_id}`}
-                          </h4>
-                          <span className={`text-[10px] px-2 py-0.5 rounded-full border uppercase ${badge}`}>
-                            {(cita.estado || '').replace('_', ' ')}
-                          </span>
-                        </div>
-                        <div className="text-xs text-slate-500 flex flex-wrap items-center gap-2">
-                          <span className="flex items-center gap-1 font-medium text-slate-600">
-                            <Stethoscope className="w-3 h-3 text-blue-500" />
-                            {cita.profesional || cita.especialidad || 'Dermatología'}
-                          </span>
-                          {cita.motivo && <span>• {cita.motivo}</span>}
-                          {cita.paciente?.telefono && (
-                            <span className="font-mono text-[11px] text-slate-400 flex items-center gap-0.5">
-                              <Phone className="w-2.5 h-2.5" />
-                              {cita.paciente.telefono}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => atenderDesdeAgenda(cita)}
-                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-2xs cursor-pointer shrink-0"
-                      >
-                        <UserCheck className="w-3.5 h-3.5" />
-                        Cargar en Consulta
-                      </button>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-
-            <div className="pt-3 border-t border-slate-100 flex justify-end">
-              <button
-                type="button"
-                onClick={() => setModalAgenda(false)}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold cursor-pointer"
-              >
-                Cerrar Agenda
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal / Reportes Contables */}
-      {modalReportes && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl space-y-5">
-            <div className="flex items-start justify-between pb-3 border-b border-slate-100">
-              <div>
-                <h3 className="font-bold text-slate-800 text-lg flex items-center gap-2">
-                  <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
-                  Cierres y Reporte Contable
-                </h3>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  Exportación mensual de honorarios para el contador (CSV / Excel)
-                </p>
-              </div>
-              <button
-                onClick={() => setModalReportes(false)}
-                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200">
-              <div>
-                <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1 flex items-center gap-1">
-                  <Calendar className="w-3.5 h-3.5" /> Mes
-                </label>
-                <select
-                  value={mesReporte}
-                  onChange={(e) => setMesReporte(Number(e.target.value))}
-                  className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                >
-                  {meses.map((m) => (
-                    <option key={m.num} value={m.num}>
-                      {m.nombre}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">
-                  Año
-                </label>
-                <select
-                  value={anioReporte}
-                  onChange={(e) => setAnioReporte(Number(e.target.value))}
-                  className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                >
-                  {aniosReporte.map((y) => (
-                    <option key={y} value={y}>
-                      {y}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {cargandoReporte ? (
-              <div className="py-8 text-center text-xs text-slate-400">Calculando métricas del mes...</div>
-            ) : resumenReporte ? (
-              <div className="space-y-3">
-                <div className="grid grid-cols-2 gap-2.5">
-                  <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl">
-                    <span className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1">
-                      <Users className="w-3.5 h-3.5" /> Consultas
-                    </span>
-                    <span className="text-lg font-bold text-slate-800 mt-1 block">
-                      {resumenReporte.total_consultas}
-                    </span>
-                  </div>
-
-                  <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl">
-                    <span className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1">
-                      <Tag className="w-3.5 h-3.5" /> Descuentos
-                    </span>
-                    <span className="text-lg font-bold text-rose-600 mt-1 block">
-                      -${resumenReporte.total_descuentos.toFixed(2)}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="p-3.5 bg-emerald-50/70 border border-emerald-200/80 rounded-xl flex items-center justify-between">
-                  <div>
-                    <span className="text-xs font-bold text-emerald-950 uppercase tracking-wider block">
-                      Total Neto Cobrado
-                    </span>
-                    <span className="text-[11px] text-emerald-700">Honorarios ingresados en caja</span>
-                  </div>
-                  <span className="text-xl font-black text-emerald-950">
-                    ${resumenReporte.total_cobrado.toFixed(2)} MXN
-                  </span>
-                </div>
-              </div>
-            ) : null}
-
-            <div className="pt-2 flex gap-2">
-              <button
-                type="button"
-                onClick={() => setModalReportes(false)}
-                className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
-              >
-                Cerrar
-              </button>
-              <button
-                type="button"
-                onClick={handleDescargarReporte}
-                disabled={descargandoReporte || (resumenReporte && resumenReporte.total_consultas === 0)}
-                className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-              >
-                <Download className="w-4 h-4" />
-                {descargandoReporte ? 'Generando...' : 'Descargar Excel / CSV'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal / Historial Clínico */}
       {modalHistorial && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-xl space-y-4 max-h-[85vh] flex flex-col">
+          <div className="bg-white rounded-2xl max-w-3xl w-full p-6 shadow-xl space-y-4 max-h-[88vh] flex flex-col">
             <div className="flex items-start justify-between pb-3 border-b border-slate-100">
               <div>
                 <h3 className="font-bold text-slate-800 text-lg flex items-center gap-2">
@@ -1202,16 +1257,54 @@ export default function VistaDoctor() {
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+            {/* BARRA DE FILTROS Y BÚSQUEDA DEL HISTORIAL */}
+            <div className="flex flex-col sm:flex-row items-center gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+              <div className="relative flex-1 w-full">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                <input
+                  type="text"
+                  placeholder="Buscar por tratamiento, producto, diagnóstico o folio..."
+                  value={busquedaHistorial}
+                  onChange={(e) => setBusquedaHistorial(e.target.value)}
+                  className="w-full pl-9 pr-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <select
+                  value={mesFiltroHistorial}
+                  onChange={(e) => setMesFiltroHistorial(e.target.value)}
+                  className="px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-xs text-slate-700 font-medium"
+                >
+                  <option value="TODOS">Todos los meses</option>
+                  {meses.map(m => (
+                    <option key={m.num} value={m.num}>{m.nombre}</option>
+                  ))}
+                </select>
+
+                <select
+                  value={anioFiltroHistorial}
+                  onChange={(e) => setAnioFiltroHistorial(e.target.value)}
+                  className="px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-xs text-slate-700 font-medium"
+                >
+                  <option value="TODOS">Todos los años</option>
+                  {aniosReporte.map(y => (
+                    <option key={y} value={y}>{y}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-3.5 pr-1">
               {cargandoHistorial ? (
                 <div className="py-12 text-center text-xs text-slate-400">Cargando expediente...</div>
-              ) : historialRecetas.length === 0 ? (
+              ) : historialFiltrado.length === 0 ? (
                 <div className="py-12 text-center text-slate-400 space-y-2">
                   <Calendar className="w-8 h-8 mx-auto text-slate-300 stroke-[1.5]" />
-                  <p className="text-xs">No hay consultas previas registradas para este paciente.<br />Esta será su primera receta médica.</p>
+                  <p className="text-xs">No se encontraron folios que coincidan con los filtros aplicados.</p>
                 </div>
               ) : (
-                historialRecetas.map((rec) => (
+                historialFiltrado.map((rec) => (
                   <div key={rec.id} className="p-4 bg-slate-50/70 border border-slate-200/90 rounded-xl space-y-3">
                     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/60 pb-2">
                       <div className="flex items-center gap-2">
@@ -1242,9 +1335,28 @@ export default function VistaDoctor() {
                       </p>
                     </div>
 
+                    {/* Procedimientos realizados en esa cita */}
+                    {rec.procedimientos && rec.procedimientos.length > 0 && (
+                      <div className="space-y-1 pt-1">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-blue-900 block">Tratamientos Clínicos Realizados:</span>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {rec.procedimientos.map((p, idx) => (
+                            <div key={idx} className="p-2 bg-blue-50/70 border border-blue-200/70 rounded-lg text-xs space-y-0.5">
+                              <div className="flex items-center justify-between font-bold text-blue-950">
+                                <span>{p.procedimiento?.nombre || `Tratamiento #${p.procedimiento_id}`}</span>
+                                <span>${Number(p.precio_cobrado || 0).toFixed(2)}</span>
+                              </div>
+                              {p.notas && <p className="text-[11px] text-blue-800 italic">{p.notas}</p>}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Medicamentos prescritos */}
                     {rec.detalles && rec.detalles.length > 0 && (
                       <div className="space-y-1.5 pt-1">
-                        <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block">Tratamiento prescrito:</span>
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block">Medicamentos prescritos:</span>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                           {rec.detalles.map((det, idx) => (
                             <div key={idx} className="p-2 bg-white border border-slate-200/80 rounded-lg text-xs space-y-0.5">
@@ -1280,6 +1392,93 @@ export default function VistaDoctor() {
                 Cerrar Historial
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal / Crear Nuevo Tratamiento Clínico */}
+      {modalNuevoProc && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl space-y-4">
+            <div className="flex items-start justify-between">
+              <div>
+                <h3 className="font-bold text-slate-800 text-base flex items-center gap-2">
+                  <Scissors className="w-4 h-4 text-emerald-700" />
+                  Alta de Tratamiento Clínico
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Agrega un procedimiento para cobrarlo en la consulta
+                </p>
+              </div>
+              <button
+                onClick={() => setModalNuevoProc(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {errorModalProc && (
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                <span>{errorModalProc}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleCrearNuevoProcedimiento} className="space-y-3">
+              <div>
+                <label className="text-xs font-semibold text-slate-600 mb-1 block">Nombre del Tratamiento *</label>
+                <input
+                  required
+                  type="text"
+                  placeholder="Ej. Cauterización de verruga, Biopsia por punch"
+                  value={nuevoProc.nombre}
+                  onChange={(e) => setNuevoProc({ ...nuevoProc, nombre: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-600 mb-1 block">Precio Sugerido / Base ($ MXN) *</label>
+                <input
+                  required
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="Ej. 650.00"
+                  value={nuevoProc.precio_base}
+                  onChange={(e) => setNuevoProc({ ...nuevoProc, precio_base: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 font-bold"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-600 mb-1 block">Descripción o especificación (Opcional)</label>
+                <textarea
+                  rows={2}
+                  placeholder="Ej. Incluye aplicación de anestesia local y material de curación"
+                  value={nuevoProc.descripcion}
+                  onChange={(e) => setNuevoProc({ ...nuevoProc, descripcion: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-none"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setModalNuevoProc(false)}
+                  className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-sm font-medium cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 bg-emerald-800 hover:bg-emerald-900 text-white rounded-xl text-sm font-medium cursor-pointer"
+                >
+                  Guardar Tratamiento
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
@@ -1466,6 +1665,254 @@ export default function VistaDoctor() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Agenda */}
+      {modalAgenda && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-xl w-full p-6 shadow-xl space-y-4 max-h-[85vh] flex flex-col">
+            <div className="flex items-start justify-between pb-3 border-b border-slate-100">
+              <div>
+                <h3 className="font-bold text-slate-800 text-lg flex items-center gap-2">
+                  <CalendarDays className="w-5 h-5 text-emerald-600" />
+                  Agenda Médica
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Pacientes citados para consulta médica dermatológica
+                </p>
+              </div>
+              <button
+                onClick={() => setModalAgenda(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <span className="text-xs font-semibold text-slate-600">Fecha:</span>
+                <input
+                  type="date"
+                  value={fechaAgenda}
+                  onChange={(e) => setFechaAgenda(e.target.value)}
+                  className="text-xs font-semibold text-slate-800 bg-white border border-slate-200 px-2.5 py-1 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
+                />
+              </div>
+
+              <div className="flex items-center gap-1 w-full sm:w-auto justify-end">
+                <button
+                  type="button"
+                  onClick={() => setFiltroEspecialidadAgenda('Dermatología')}
+                  className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-colors cursor-pointer ${
+                    filtroEspecialidadAgenda === 'Dermatología'
+                      ? 'bg-slate-900 text-white'
+                      : 'text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  Dermatología
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFiltroEspecialidadAgenda('TODAS')}
+                  className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-colors cursor-pointer ${
+                    filtroEspecialidadAgenda === 'TODAS'
+                      ? 'bg-slate-900 text-white'
+                      : 'text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  Todas
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">
+              {cargandoAgenda ? (
+                <div className="py-12 text-center text-xs text-slate-400">Cargando agenda médica...</div>
+              ) : citasAgenda.length === 0 ? (
+                <div className="py-12 text-center text-slate-400 space-y-2">
+                  <Calendar className="w-8 h-8 mx-auto text-slate-300 stroke-[1.5]" />
+                  <p className="text-xs font-medium">No hay consultas médicas programadas para esta fecha.</p>
+                </div>
+              ) : (
+                citasAgenda.map((cita) => {
+                  let badge = 'bg-slate-100 text-slate-600 border-slate-200';
+                  if (cita.estado === 'en_espera') badge = 'bg-amber-100 text-amber-900 border-amber-300 animate-pulse font-bold';
+                  if (cita.estado === 'en_atencion') badge = 'bg-blue-100 text-blue-900 border-blue-300 font-bold';
+                  if (cita.estado === 'completada') badge = 'bg-emerald-100 text-emerald-900 border-emerald-300';
+                  if (cita.estado === 'cancelada') badge = 'bg-rose-100 text-rose-700 border-rose-200 line-through';
+
+                  return (
+                    <div 
+                      key={cita.id}
+                      className="p-3 bg-slate-50/80 border border-slate-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:border-slate-300 transition-colors"
+                    >
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-mono font-bold bg-white px-2 py-0.5 rounded border border-slate-200 text-slate-700">
+                            {formatearHoraCita(cita)}
+                          </span>
+                          <h4 className="text-sm font-bold text-slate-800">
+                            {cita.paciente?.nombre_completo || `Paciente #${cita.paciente_id}`}
+                          </h4>
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full border uppercase ${badge}`}>
+                            {(cita.estado || '').replace('_', ' ')}
+                          </span>
+                        </div>
+                        <div className="text-xs text-slate-500 flex flex-wrap items-center gap-2">
+                          <span className="flex items-center gap-1 font-medium text-slate-600">
+                            <Stethoscope className="w-3 h-3 text-blue-500" />
+                            {cita.profesional || cita.especialidad || 'Dermatología'}
+                          </span>
+                          {cita.motivo && <span>• {cita.motivo}</span>}
+                          {cita.paciente?.telefono && (
+                            <span className="font-mono text-[11px] text-slate-400 flex items-center gap-0.5">
+                              <Phone className="w-2.5 h-2.5" />
+                              {cita.paciente.telefono}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => atenderDesdeAgenda(cita)}
+                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-2xs cursor-pointer shrink-0"
+                      >
+                        <UserCheck className="w-3.5 h-3.5" />
+                        Cargar en Consulta
+                      </button>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            <div className="pt-3 border-t border-slate-100 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setModalAgenda(false)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold cursor-pointer"
+              >
+                Cerrar Agenda
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Reportes */}
+      {modalReportes && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl space-y-5">
+            <div className="flex items-start justify-between pb-3 border-b border-slate-100">
+              <div>
+                <h3 className="font-bold text-slate-800 text-lg flex items-center gap-2">
+                  <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
+                  Cierres y Reporte Contable
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Exportación mensual de honorarios para el contador (CSV / Excel)
+                </p>
+              </div>
+              <button
+                onClick={() => setModalReportes(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+              <div>
+                <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1 flex items-center gap-1">
+                  <Calendar className="w-3.5 h-3.5" /> Mes
+                </label>
+                <select
+                  value={mesReporte}
+                  onChange={(e) => setMesReporte(Number(e.target.value))}
+                  className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                >
+                  {meses.map((m) => (
+                    <option key={m.num} value={m.num}>{m.nombre}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+                  Año
+                </label>
+                <select
+                  value={anioReporte}
+                  onChange={(e) => setAnioReporte(Number(e.target.value))}
+                  className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                >
+                  {aniosReporte.map((y) => (
+                    <option key={y} value={y}>{y}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {cargandoReporte ? (
+              <div className="py-8 text-center text-xs text-slate-400">Calculando métricas del mes...</div>
+            ) : resumenReporte ? (
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl">
+                    <span className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1">
+                      <Users className="w-3.5 h-3.5" /> Consultas
+                    </span>
+                    <span className="text-lg font-bold text-slate-800 mt-1 block">
+                      {resumenReporte.total_consultas}
+                    </span>
+                  </div>
+
+                  <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl">
+                    <span className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1">
+                      <Tag className="w-3.5 h-3.5" /> Descuentos
+                    </span>
+                    <span className="text-lg font-bold text-rose-600 mt-1 block">
+                      -${resumenReporte.total_descuentos.toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="p-3.5 bg-emerald-50/70 border border-emerald-200/80 rounded-xl flex items-center justify-between">
+                  <div>
+                    <span className="text-xs font-bold text-emerald-950 uppercase tracking-wider block">
+                      Total Neto Cobrado
+                    </span>
+                    <span className="text-[11px] text-emerald-700">Honorarios ingresados en caja</span>
+                  </div>
+                  <span className="text-xl font-black text-emerald-950">
+                    ${resumenReporte.total_cobrado.toFixed(2)} MXN
+                  </span>
+                </div>
+              </div>
+            ) : null}
+
+            <div className="pt-2 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setModalReportes(false)}
+                className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold cursor-pointer"
+              >
+                Cerrar
+              </button>
+              <button
+                type="button"
+                onClick={handleDescargarReporte}
+                disabled={descargandoReporte || (resumenReporte && resumenReporte.total_consultas === 0)}
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              >
+                <Download className="w-4 h-4" />
+                {descargandoReporte ? 'Generando...' : 'Descargar Excel / CSV'}
+              </button>
+            </div>
           </div>
         </div>
       )}
