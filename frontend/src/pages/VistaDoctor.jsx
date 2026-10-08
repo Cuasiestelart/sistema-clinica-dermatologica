@@ -25,7 +25,8 @@ import {
   Phone,
   UserCheck,
   Stethoscope,
-  Scissors
+  Scissors,
+  Printer
 } from 'lucide-react';
 import { 
   getProductos, 
@@ -45,6 +46,7 @@ import {
   actualizarProcedimiento,
   eliminarProcedimiento
 } from '../api/client';
+import ModalImpresionReceta from '../components/ModalImpresionReceta';
 
 export default function VistaDoctor() {
   // Pestaña activa en catálogo: 'PRODUCTOS' o 'PROCEDIMIENTOS'
@@ -92,6 +94,9 @@ export default function VistaDoctor() {
   const [busquedaHistorial, setBusquedaHistorial] = useState('');
   const [mesFiltroHistorial, setMesFiltroHistorial] = useState('TODOS');
   const [anioFiltroHistorial, setAnioFiltroHistorial] = useState('TODOS');
+
+  // Modal Impresión de Receta
+  const [recetaAImprimir, setRecetaAImprimir] = useState(null);
 
   // Agenda Médica
   const hoyStr = new Date().toISOString().split('T')[0];
@@ -502,7 +507,7 @@ export default function VistaDoctor() {
     }
   };
 
-  // Emitir Receta
+  // Emitir Receta y abrir inmediatamente el formato de impresión
   const handleEmitirReceta = async () => {
     if (!pacienteSeleccionado) {
       setErrorEnvio('Selecciona o registra un paciente antes de emitir la receta.');
@@ -539,6 +544,10 @@ export default function VistaDoctor() {
     try {
       const res = await crearReceta(payload);
       setMensajeExito(`¡Consulta guardada con éxito! Folio registrado: #${res.data.id}`);
+      
+      // Abrir vista previa de impresión de la receta emitida
+      setRecetaAImprimir(res.data);
+
       setItemsReceta([]);
       setProcedimientosReceta([]);
       setDiagnostico('');
@@ -556,7 +565,7 @@ export default function VistaDoctor() {
     }
   };
 
-  // Función auxiliar para quitar acentos y pasar a minúsculas
+  // Función auxiliar para normalizar texto en búsquedas
   const normalizarTexto = (txt) => {
     return (txt || '')
       .normalize('NFD')
@@ -565,7 +574,7 @@ export default function VistaDoctor() {
       .trim();
   };
 
-  // Historial con filtros (incluye activo dermatológico / ingredientes)
+  // Historial con filtros integrales
   const historialFiltrado = useMemo(() => {
     return historialRecetas.filter(rec => {
       const q = normalizarTexto(busquedaHistorial);
@@ -962,7 +971,7 @@ export default function VistaDoctor() {
                                   yaAgregado 
                                     ? 'bg-slate-200 text-slate-400 cursor-not-allowed' 
                                     : 'bg-emerald-800 hover:bg-emerald-900 text-white shadow-sm'
-                                }}}`}
+                                }`}
                               >
                                 <Plus className="w-3.5 h-3.5" />
                                 {yaAgregado ? 'Cargado' : '+ Agregar a cobro'}
@@ -1291,7 +1300,7 @@ export default function VistaDoctor() {
       </div>
 
       {/* ======================================================== */}
-      {/* MODAL / HISTORIAL CLÍNICO CON BÚSQUEDA INTEGRAL          */}
+      {/* MODAL / HISTORIAL CLÍNICO                                */}
       {/* ======================================================== */}
       {modalHistorial && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -1371,6 +1380,15 @@ export default function VistaDoctor() {
                         <span className="text-xs text-slate-600 font-medium">
                           {rec.fecha ? new Date(rec.fecha).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Fecha no registrada'}
                         </span>
+                        {/* Botón para reimprimir cualquier receta desde el historial */}
+                        <button
+                          type="button"
+                          onClick={() => setRecetaAImprimir(rec)}
+                          className="flex items-center gap-1 text-[11px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2.5 py-1 rounded-lg transition-colors cursor-pointer ml-1"
+                          title="Imprimir esta receta"
+                        >
+                          <Printer className="w-3.5 h-3.5" /> Imprimir
+                        </button>
                       </div>
                       <div className="flex items-center gap-2">
                         {rec.total_consulta !== undefined && rec.total_consulta !== null && (
@@ -1824,7 +1842,7 @@ export default function VistaDoctor() {
               <div>
                 <h3 className="font-bold text-slate-800 text-lg flex items-center gap-2">
                   <CalendarDays className="w-5 h-5 text-emerald-600" />
-                  Agenda Médica
+                  Agenda del Día
                 </h3>
                 <p className="text-xs text-slate-400 mt-0.5">
                   Pacientes citados para consulta médica dermatológica
@@ -2062,6 +2080,14 @@ export default function VistaDoctor() {
             </div>
           </div>
         </div>
+      )}
+
+      {recetaAImprimir && (
+        <ModalImpresionReceta
+          receta={recetaAImprimir}
+          paciente={pacienteSeleccionado || recetaAImprimir.paciente}
+          onClose={() => setRecetaAImprimir(null)}
+        />
       )}
     </div>
   );

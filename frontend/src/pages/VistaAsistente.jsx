@@ -303,7 +303,7 @@ export default function VistaAsistente() {
 
         <div className="flex items-center gap-2 bg-white px-3.5 py-2 rounded-xl border border-slate-200 shadow-xs">
           <Calendar className="w-4 h-4 text-emerald-600" />
-          <span className="text-xs font-semibold text-slate-500">Día en cartelera:</span>
+          <span className="text-xs font-semibold text-slate-500">Fecha de de agenda:</span>
           <input
             type="date"
             value={fechaFiltro}
@@ -476,12 +476,12 @@ export default function VistaAsistente() {
           </form>
         </div>
 
-        {/* COLUMNA DERECHA: Cartelera del Día */}
+        {/* COLUMNA DERECHA: Agenda del Día */}
         <div className="lg:col-span-7 bg-white p-6 rounded-2xl border border-slate-200 shadow-xs flex flex-col">
           <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
             <div>
               <h2 className="text-base font-bold text-slate-800">
-                Cartelera del Día ({fechaFiltro})
+                Agenda del Día ({fechaFiltro})
               </h2>
               <p className="text-xs text-slate-500">
                 {citas.length} {citas.length === 1 ? 'cita programada' : 'citas programadas'}
