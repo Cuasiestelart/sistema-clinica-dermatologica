@@ -4,6 +4,7 @@ from typing import List, Optional
 
 from app.database import get_db
 from app.models.procedimiento import Procedimiento
+from app.models.receta import RecetaProcedimiento
 from app.schemas.procedimiento import (
     ProcedimientoCreate, 
     ProcedimientoUpdate, 
@@ -82,3 +83,26 @@ def actualizar_procedimiento(
     db.commit()
     db.refresh(proc)
     return proc
+
+@router.delete("/{procedimiento_id}")
+def eliminar_procedimiento(
+    procedimiento_id: int,
+    db: Session = Depends(get_db)
+):
+    proc = db.query(Procedimiento).filter(Procedimiento.id == procedimiento_id).first()
+    if not proc:
+        raise HTTPException(status_code=404, detail="Procedimiento no encontrado.")
+
+    # Protección de integridad: no borrar si ya fue registrado en consultas previas
+    en_uso = db.query(RecetaProcedimiento).filter(
+        RecetaProcedimiento.procedimiento_id == procedimiento_id
+    ).first()
+    if en_uso:
+        raise HTTPException(
+            status_code=400,
+            detail="No se puede eliminar este procedimiento porque ya tiene historial de recetas médicas asociadas. Puedes modificar su nombre o precio en su lugar."
+        )
+
+    db.delete(proc)
+    db.commit()
+    return {"mensaje": "Procedimiento eliminado exitosamente", "id": procedimiento_id}

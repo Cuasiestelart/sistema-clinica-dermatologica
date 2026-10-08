@@ -58,6 +58,14 @@ export const crearProcedimiento = (data) => {
   return api.post('/procedimientos/', data);
 };
 
+export const actualizarProcedimiento = (id, data) => {
+  return api.patch(`/procedimientos/${id}`, data);
+};
+
+export const eliminarProcedimiento = (id) => {
+  return api.delete(`/procedimientos/${id}`);
+};
+
 // Endpoints de Reportes y Cortes
 export const getResumenMensual = (anio, mes) => 
   api.get('/reportes/resumen-mensual', { params: { anio, mes } });

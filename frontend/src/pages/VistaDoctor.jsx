@@ -25,8 +25,7 @@ import {
   Phone,
   UserCheck,
   Stethoscope,
-  Scissors,
-  Filter
+  Scissors
 } from 'lucide-react';
 import { 
   getProductos, 
@@ -42,7 +41,9 @@ import {
   getCitas,
   actualizarEstadoCita,
   getProcedimientos,
-  crearProcedimiento
+  crearProcedimiento,
+  actualizarProcedimiento,
+  eliminarProcedimiento
 } from '../api/client';
 
 export default function VistaDoctor() {
@@ -61,6 +62,12 @@ export default function VistaDoctor() {
   const [modalNuevoProc, setModalNuevoProc] = useState(false);
   const [nuevoProc, setNuevoProc] = useState({ nombre: '', precio_base: '', descripcion: '' });
   const [errorModalProc, setErrorModalProc] = useState(null);
+
+  // Edición de Procedimiento Existente
+  const [modalEditarProc, setModalEditarProc] = useState(false);
+  const [procAEditar, setProcAEditar] = useState(null);
+  const [guardandoEdicionProc, setGuardandoEdicionProc] = useState(false);
+  const [errorModalEditarProc, setErrorModalEditarProc] = useState(null);
 
   // Sustitutos
   const [modalSustitutos, setModalSustitutos] = useState(false);
@@ -146,7 +153,6 @@ export default function VistaDoctor() {
     return Number(prod.precio_base ?? prod.precio_venta ?? prod.precio ?? 0);
   };
 
-  // Carga inicial
   useEffect(() => {
     cargarProductos();
     cargarCatalogoProcedimientos();
@@ -199,7 +205,7 @@ export default function VistaDoctor() {
     }
   };
 
-  // Recalcular total automáticamente al agregar/quitar procedimientos o costo base
+  // Cálculo en tiempo real de honorarios y procedimientos
   const sumaProcedimientos = useMemo(() => {
     return procedimientosReceta.reduce((acc, p) => acc + Number(p.precio_cobrado || 0), 0);
   }, [procedimientosReceta]);
@@ -231,7 +237,7 @@ export default function VistaDoctor() {
     recalcularCobro(tipo, subtotalBruto);
   };
 
-  // Manejo de Agenda
+  // Agenda
   const cargarCitasAgenda = async (fecha = fechaAgenda, esp = filtroEspecialidadAgenda) => {
     try {
       setCargandoAgenda(true);
@@ -307,7 +313,6 @@ export default function VistaDoctor() {
     }
   };
 
-  // Guardar nota fija
   const handleGuardarNota = async () => {
     if (!pacienteSeleccionado) return;
     if (notaPaciente === (pacienteSeleccionado.nota_fija || '')) return;
@@ -323,7 +328,6 @@ export default function VistaDoctor() {
     }
   };
 
-  // Búsqueda de pacientes
   useEffect(() => {
     const delayDebounce = setTimeout(async () => {
       const query = busquedaPac.trim();
@@ -342,7 +346,7 @@ export default function VistaDoctor() {
     return () => clearTimeout(delayDebounce);
   }, [busquedaPac, pacienteSeleccionado]);
 
-  // Manejo de productos en receta
+  // Manejo de productos en la receta
   const agregarAReceta = (prod) => {
     if (itemsReceta.some(i => i.producto_id === prod.id)) return;
     setItemsReceta([
@@ -368,7 +372,7 @@ export default function VistaDoctor() {
     setItemsReceta(itemsReceta.filter(item => item.producto_id !== producto_id));
   };
 
-  // Manejo de procedimientos en consulta
+  // Manejo de procedimientos en la consulta
   const agregarProcedimientoAReceta = (proc) => {
     if (procedimientosReceta.some(p => p.procedimiento_id === proc.id)) return;
     setProcedimientosReceta([
@@ -392,6 +396,7 @@ export default function VistaDoctor() {
     setProcedimientosReceta(procedimientosReceta.filter(p => p.procedimiento_id !== procedimiento_id));
   };
 
+  // Crear nuevo procedimiento
   const handleCrearNuevoProcedimiento = async (e) => {
     e.preventDefault();
     setErrorModalProc(null);
@@ -410,6 +415,54 @@ export default function VistaDoctor() {
     }
   };
 
+  // Editar procedimiento existente (PATCH)
+  const abrirEdicionProcedimiento = (proc) => {
+    setProcAEditar({ ...proc });
+    setErrorModalEditarProc(null);
+    setModalEditarProc(true);
+  };
+
+  const handleGuardarEdicionProcedimiento = async (e) => {
+    e.preventDefault();
+    if (!procAEditar) return;
+    setErrorModalEditarProc(null);
+    setGuardandoEdicionProc(true);
+    try {
+      const res = await actualizarProcedimiento(procAEditar.id, {
+        nombre: procAEditar.nombre.trim(),
+        precio_base: parseFloat(procAEditar.precio_base) || 0,
+        descripcion: procAEditar.descripcion?.trim() || null
+      });
+      // Actualizar catálogo visualmente
+      setProcedimientos(prev => 
+        prev.map(p => p.id === res.data.id ? res.data : p)
+      );
+      // Si estaba en la consulta activa, actualizar nombre y costo
+      setProcedimientosReceta(prev => 
+        prev.map(p => p.procedimiento_id === res.data.id ? { ...p, nombre: res.data.nombre } : p)
+      );
+      setModalEditarProc(false);
+    } catch (err) {
+      setErrorModalEditarProc(err.response?.data?.detail || 'Error al actualizar procedimiento.');
+    } finally {
+      setGuardandoEdicionProc(false);
+    }
+  };
+
+  // Eliminar procedimiento (DELETE)
+  const handleEliminarProcedimiento = async (proc) => {
+    const confirmacion = window.confirm(`¿Estás seguro de eliminar el procedimiento "${proc.nombre}"?`);
+    if (!confirmacion) return;
+
+    try {
+      await eliminarProcedimiento(proc.id);
+      setProcedimientos(prev => prev.filter(p => p.id !== proc.id));
+      setProcedimientosReceta(prev => prev.filter(p => p.procedimiento_id !== proc.id));
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Error al eliminar el procedimiento.');
+    }
+  };
+
   // Modal sustitutos
   const handleAbrirSustitutos = async (prod) => {
     setProductoAgotado(prod);
@@ -425,7 +478,7 @@ export default function VistaDoctor() {
     }
   };
 
-  // Guardar Paciente
+  // Guardar nuevo paciente
   const handleGuardarPaciente = async (e) => {
     e.preventDefault();
     setErrorModalPaciente(null);
@@ -462,7 +515,7 @@ export default function VistaDoctor() {
     }
   };
 
-  // Emitir Receta
+  // Emitir Receta y Liquidar
   const handleEmitirReceta = async () => {
     if (!pacienteSeleccionado) {
       setErrorEnvio('Selecciona o registra un paciente antes de emitir la receta.');
@@ -516,10 +569,9 @@ export default function VistaDoctor() {
     }
   };
 
-  // Filtro inteligente en el Historial Clínico
+  // Historial con filtros
   const historialFiltrado = useMemo(() => {
     return historialRecetas.filter(rec => {
-      // Filtro de texto
       const q = busquedaHistorial.toLowerCase().trim();
       let coincideTexto = true;
       if (q) {
@@ -536,7 +588,6 @@ export default function VistaDoctor() {
         coincideTexto = enDiag || enFolio || enProds || enProcs;
       }
 
-      // Filtro de fecha
       let coincideFecha = true;
       if (rec.fecha) {
         const fechaObj = new Date(rec.fecha);
@@ -841,7 +892,7 @@ export default function VistaDoctor() {
               </>
             )}
 
-            {/* TAB PROCEDIMIENTOS */}
+            {/* TAB PROCEDIMIENTOS CON BOTÓN EDITAR (LÁPIZ) Y BORRAR */}
             {tabCatalogo === 'PROCEDIMIENTOS' && (
               <>
                 <div className="relative mb-3">
@@ -884,6 +935,25 @@ export default function VistaDoctor() {
                               <span className="text-[10px] uppercase font-bold tracking-wider text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded">
                                 Procedimiento Clínico
                               </span>
+                              {/* Botones de Acción: Editar y Eliminar */}
+                              <div className="flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => abrirEdicionProcedimiento(proc)}
+                                  className="text-slate-400 hover:text-emerald-700 p-1 rounded hover:bg-slate-100 transition-colors cursor-pointer"
+                                  title="Editar tratamiento"
+                                >
+                                  <FileEdit className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleEliminarProcedimiento(proc)}
+                                  className="text-slate-400 hover:text-rose-600 p-1 rounded hover:bg-rose-50 transition-colors cursor-pointer"
+                                  title="Eliminar tratamiento"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
                             </div>
                             <h4 className="font-semibold text-sm text-slate-800 leading-tight">{proc.nombre}</h4>
                             {proc.descripcion && (
@@ -1476,6 +1546,91 @@ export default function VistaDoctor() {
                   className="flex-1 py-2.5 bg-emerald-800 hover:bg-emerald-900 text-white rounded-xl text-sm font-medium cursor-pointer"
                 >
                   Guardar Tratamiento
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Editar Tratamiento Clínico (PATCH) */}
+      {modalEditarProc && procAEditar && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl space-y-4">
+            <div className="flex items-start justify-between">
+              <div>
+                <h3 className="font-bold text-slate-800 text-base flex items-center gap-2">
+                  <FileEdit className="w-4 h-4 text-emerald-700" />
+                  Editar Tratamiento Clínico
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Modifica el nombre o precio sugerido del procedimiento
+                </p>
+              </div>
+              <button
+                onClick={() => setModalEditarProc(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {errorModalEditarProc && (
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                <span>{errorModalEditarProc}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleGuardarEdicionProcedimiento} className="space-y-3">
+              <div>
+                <label className="text-xs font-semibold text-slate-600 mb-1 block">Nombre *</label>
+                <input
+                  required
+                  type="text"
+                  value={procAEditar.nombre}
+                  onChange={(e) => setProcAEditar({ ...procAEditar, nombre: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-600 mb-1 block">Precio Base ($ MXN) *</label>
+                <input
+                  required
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={procAEditar.precio_base}
+                  onChange={(e) => setProcAEditar({ ...procAEditar, precio_base: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-emerald-950 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-600 mb-1 block">Descripción (Opcional)</label>
+                <textarea
+                  rows={2}
+                  value={procAEditar.descripcion || ''}
+                  onChange={(e) => setProcAEditar({ ...procAEditar, descripcion: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-none"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setModalEditarProc(false)}
+                  className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-sm font-medium cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={guardandoEdicionProc}
+                  className="flex-1 py-2.5 bg-emerald-800 hover:bg-emerald-900 text-white rounded-xl text-sm font-medium transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  {guardandoEdicionProc ? 'Guardando...' : 'Actualizar'}
                 </button>
               </div>
             </form>
