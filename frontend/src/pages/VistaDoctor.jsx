@@ -50,20 +50,17 @@ export default function VistaDoctor() {
   // Pestaña activa en catálogo: 'PRODUCTOS' o 'PROCEDIMIENTOS'
   const [tabCatalogo, setTabCatalogo] = useState('PRODUCTOS');
 
-  // Productos / Medicamentos
+  // Catálogos
   const [productos, setProductos] = useState([]);
-  const [filtroProd, setFiltroProd] = useState('');
-  const [cargandoProd, setCargandoProd] = useState(false);
-
-  // Procedimientos Clínicos
   const [procedimientos, setProcedimientos] = useState([]);
-  const [filtroProc, setFiltroProc] = useState('');
-  const [cargandoProc, setCargandoProc] = useState(false);
+  const [busquedaCatalogo, setBusquedaCatalogo] = useState('');
+  const [cargandoCatalogo, setCargandoCatalogo] = useState(false);
+
+  // Procedimientos Clínicos (Alta y Edición)
   const [modalNuevoProc, setModalNuevoProc] = useState(false);
   const [nuevoProc, setNuevoProc] = useState({ nombre: '', precio_base: '', descripcion: '' });
   const [errorModalProc, setErrorModalProc] = useState(null);
 
-  // Edición de Procedimiento Existente
   const [modalEditarProc, setModalEditarProc] = useState(false);
   const [procAEditar, setProcAEditar] = useState(null);
   const [guardandoEdicionProc, setGuardandoEdicionProc] = useState(false);
@@ -88,7 +85,7 @@ export default function VistaDoctor() {
   const [notaPaciente, setNotaPaciente] = useState('');
   const [guardandoNota, setGuardandoNota] = useState(false);
 
-  // Historial y Filtros de Búsqueda
+  // Historial Clínico y Filtros
   const [modalHistorial, setModalHistorial] = useState(false);
   const [historialRecetas, setHistorialRecetas] = useState([]);
   const [cargandoHistorial, setCargandoHistorial] = useState(false);
@@ -96,7 +93,7 @@ export default function VistaDoctor() {
   const [mesFiltroHistorial, setMesFiltroHistorial] = useState('TODOS');
   const [anioFiltroHistorial, setAnioFiltroHistorial] = useState('TODOS');
 
-  // Agenda del Doctor
+  // Agenda Médica
   const hoyStr = new Date().toISOString().split('T')[0];
   const [modalAgenda, setModalAgenda] = useState(false);
   const [fechaAgenda, setFechaAgenda] = useState(hoyStr);
@@ -116,7 +113,7 @@ export default function VistaDoctor() {
   const [totalConsulta, setTotalConsulta] = useState(800);
   const [motivoManual, setMotivoManual] = useState('');
 
-  // Reportes / Contador
+  // Reportes Contables
   const ahora = new Date();
   const [modalReportes, setModalReportes] = useState(false);
   const [anioReporte, setAnioReporte] = useState(ahora.getFullYear());
@@ -153,34 +150,26 @@ export default function VistaDoctor() {
     return Number(prod.precio_base ?? prod.precio_venta ?? prod.precio ?? 0);
   };
 
+  // Búsqueda en catálogo con Debounce (200 ms) y llamadas paralelas
   useEffect(() => {
-    cargarProductos();
-    cargarCatalogoProcedimientos();
-  }, []);
+    setCargandoCatalogo(true);
+    const timer = setTimeout(async () => {
+      try {
+        const [resProd, resProc] = await Promise.all([
+          getProductos(busquedaCatalogo),
+          getProcedimientos(busquedaCatalogo)
+        ]);
+        setProductos(resProd.data || []);
+        setProcedimientos(resProc.data || []);
+      } catch (err) {
+        console.error('Error al consultar catálogos:', err);
+      } finally {
+        setCargandoCatalogo(false);
+      }
+    }, 200);
 
-  const cargarProductos = async (termino = '') => {
-    try {
-      setCargandoProd(true);
-      const res = await getProductos(termino);
-      setProductos(res.data);
-    } catch (err) {
-      console.error('Error al cargar productos:', err);
-    } finally {
-      setCargandoProd(false);
-    }
-  };
-
-  const cargarCatalogoProcedimientos = async (termino = '') => {
-    try {
-      setCargandoProc(true);
-      const res = await getProcedimientos(termino);
-      setProcedimientos(res.data);
-    } catch (err) {
-      console.error('Error al cargar procedimientos:', err);
-    } finally {
-      setCargandoProc(false);
-    }
-  };
+    return () => clearTimeout(timer);
+  }, [busquedaCatalogo]);
 
   useEffect(() => {
     if (pacienteSeleccionado) {
@@ -205,7 +194,7 @@ export default function VistaDoctor() {
     }
   };
 
-  // Cálculo en tiempo real de honorarios y procedimientos
+  // Cálculos de honorarios
   const sumaProcedimientos = useMemo(() => {
     return procedimientosReceta.reduce((acc, p) => acc + Number(p.precio_cobrado || 0), 0);
   }, [procedimientosReceta]);
@@ -346,7 +335,7 @@ export default function VistaDoctor() {
     return () => clearTimeout(delayDebounce);
   }, [busquedaPac, pacienteSeleccionado]);
 
-  // Manejo de productos en la receta
+  // Manejo de medicamentos en receta
   const agregarAReceta = (prod) => {
     if (itemsReceta.some(i => i.producto_id === prod.id)) return;
     setItemsReceta([
@@ -372,7 +361,7 @@ export default function VistaDoctor() {
     setItemsReceta(itemsReceta.filter(item => item.producto_id !== producto_id));
   };
 
-  // Manejo de procedimientos en la consulta
+  // Manejo de procedimientos en consulta
   const agregarProcedimientoAReceta = (proc) => {
     if (procedimientosReceta.some(p => p.procedimiento_id === proc.id)) return;
     setProcedimientosReceta([
@@ -396,7 +385,7 @@ export default function VistaDoctor() {
     setProcedimientosReceta(procedimientosReceta.filter(p => p.procedimiento_id !== procedimiento_id));
   };
 
-  // Crear nuevo procedimiento
+  // Crear procedimiento
   const handleCrearNuevoProcedimiento = async (e) => {
     e.preventDefault();
     setErrorModalProc(null);
@@ -415,7 +404,7 @@ export default function VistaDoctor() {
     }
   };
 
-  // Editar procedimiento existente (PATCH)
+  // Editar procedimiento
   const abrirEdicionProcedimiento = (proc) => {
     setProcAEditar({ ...proc });
     setErrorModalEditarProc(null);
@@ -433,11 +422,9 @@ export default function VistaDoctor() {
         precio_base: parseFloat(procAEditar.precio_base) || 0,
         descripcion: procAEditar.descripcion?.trim() || null
       });
-      // Actualizar catálogo visualmente
       setProcedimientos(prev => 
         prev.map(p => p.id === res.data.id ? res.data : p)
       );
-      // Si estaba en la consulta activa, actualizar nombre y costo
       setProcedimientosReceta(prev => 
         prev.map(p => p.procedimiento_id === res.data.id ? { ...p, nombre: res.data.nombre } : p)
       );
@@ -449,7 +436,7 @@ export default function VistaDoctor() {
     }
   };
 
-  // Eliminar procedimiento (DELETE)
+  // Eliminar procedimiento
   const handleEliminarProcedimiento = async (proc) => {
     const confirmacion = window.confirm(`¿Estás seguro de eliminar el procedimiento "${proc.nombre}"?`);
     if (!confirmacion) return;
@@ -515,7 +502,7 @@ export default function VistaDoctor() {
     }
   };
 
-  // Emitir Receta y Liquidar
+  // Emitir Receta
   const handleEmitirReceta = async () => {
     if (!pacienteSeleccionado) {
       setErrorEnvio('Selecciona o registra un paciente antes de emitir la receta.');
@@ -569,21 +556,32 @@ export default function VistaDoctor() {
     }
   };
 
-  // Historial con filtros
+  // Función auxiliar para quitar acentos y pasar a minúsculas
+  const normalizarTexto = (txt) => {
+    return (txt || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim();
+  };
+
+  // Historial con filtros (incluye activo dermatológico / ingredientes)
   const historialFiltrado = useMemo(() => {
     return historialRecetas.filter(rec => {
-      const q = busquedaHistorial.toLowerCase().trim();
+      const q = normalizarTexto(busquedaHistorial);
       let coincideTexto = true;
       if (q) {
-        const enDiag = (rec.diagnostico || '').toLowerCase().includes(q);
+        const enDiag = normalizarTexto(rec.diagnostico).includes(q);
         const enFolio = String(rec.id).includes(q);
         const enProds = (rec.detalles || []).some(d => 
-          (d.producto?.nombre || '').toLowerCase().includes(q) ||
-          (d.indicaciones || '').toLowerCase().includes(q)
+          normalizarTexto(d.producto?.nombre).includes(q) ||
+          normalizarTexto(d.producto?.activo_dermatologico).includes(q) ||
+          normalizarTexto(d.indicaciones).includes(q)
         );
         const enProcs = (rec.procedimientos || []).some(p => 
-          (p.procedimiento?.nombre || '').toLowerCase().includes(q) ||
-          (p.notas || '').toLowerCase().includes(q)
+          normalizarTexto(p.procedimiento?.nombre).includes(q) ||
+          normalizarTexto(p.procedimiento?.descripcion).includes(q) ||
+          normalizarTexto(p.notas).includes(q)
         );
         coincideTexto = enDiag || enFolio || enProds || enProcs;
       }
@@ -674,7 +672,7 @@ export default function VistaDoctor() {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* Columna Izquierda: Paciente + Catálogo (Fórmulas / Procedimientos) + Notas */}
+        {/* Columna Izquierda: Paciente + Catálogo + Notas */}
         <div className="lg:col-span-7 space-y-5">
           
           {/* Tarjeta de Paciente */}
@@ -759,10 +757,31 @@ export default function VistaDoctor() {
             )}
           </div>
 
-          {/* Catálogo Dividido: Fórmulas vs Procedimientos */}
-          <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
+          {/* Catálogo Unificado */}
+          <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 space-y-3">
+            {/* Barra de Búsqueda Única para Medicamentos y Tratamientos con Debounce */}
+            <div className="relative">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3.5" />
+              <input
+                type="text"
+                placeholder="Buscar medicamento, activo o procedimiento (ej. acido, crioterapia)..."
+                value={busquedaCatalogo}
+                onChange={(e) => setBusquedaCatalogo(e.target.value)}
+                className="w-full pl-9 pr-8 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              />
+              {busquedaCatalogo && (
+                <button
+                  type="button"
+                  onClick={() => setBusquedaCatalogo('')}
+                  className="absolute right-3 top-3 text-slate-400 hover:text-slate-600 text-xs font-bold cursor-pointer"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+
             {/* Pestañas de Selección */}
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-3">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
                 <button
                   type="button"
@@ -802,189 +821,157 @@ export default function VistaDoctor() {
               )}
             </div>
 
-            {/* TAB PRODUCTOS */}
-            {tabCatalogo === 'PRODUCTOS' && (
+            {cargandoCatalogo ? (
+              <div className="py-12 text-center text-xs text-slate-400 animate-pulse">
+                Buscando en catálogo...
+              </div>
+            ) : (
               <>
-                <div className="relative mb-3">
-                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
-                  <input
-                    type="text"
-                    placeholder="Buscar por activo, fórmula o nombre..."
-                    value={filtroProd}
-                    onChange={(e) => {
-                      setFiltroProd(e.target.value);
-                      cargarProductos(e.target.value);
-                    }}
-                    className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
-                </div>
-
-                {cargandoProd ? (
-                  <div className="py-12 text-center text-sm text-slate-400">Actualizando catálogo...</div>
-                ) : (
+                {/* TAB PRODUCTOS */}
+                {tabCatalogo === 'PRODUCTOS' && (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[320px] overflow-y-auto pr-1">
-                    {productos.map(prod => {
-                      const yaRecetado = itemsReceta.some(i => i.producto_id === prod.id);
-                      const precio = obtenerPrecio(prod);
-                      const sinStock = (prod.stock_actual ?? 0) <= 0;
+                    {productos.length === 0 ? (
+                      <div className="col-span-2 py-10 text-center text-xs text-slate-400">
+                        No se encontraron medicamentos para esta búsqueda.
+                      </div>
+                    ) : (
+                      productos.map(prod => {
+                        const yaRecetado = itemsReceta.some(i => i.producto_id === prod.id);
+                        const precio = obtenerPrecio(prod);
+                        const sinStock = (prod.stock_actual ?? 0) <= 0;
 
-                      return (
-                        <div 
-                          key={prod.id}
-                          className={`p-3.5 border rounded-xl flex flex-col justify-between transition-colors ${
-                            sinStock 
-                              ? 'border-rose-100 bg-rose-50/20' 
-                              : 'border-slate-100 bg-slate-50/50 hover:border-emerald-200'
-                          }`}
-                        >
-                          <div>
-                            <div className="flex items-center justify-between mb-1">
-                              <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400">
-                                {prod.marca?.nombre || 'Genérico'}
-                              </span>
-                              <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
-                                sinStock ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-800'
-                              }`}>
-                                {sinStock ? 'Agotado (0)' : `Stock: ${prod.stock_actual}`}
-                              </span>
+                        return (
+                          <div 
+                            key={prod.id}
+                            className={`p-3.5 border rounded-xl flex flex-col justify-between transition-colors ${
+                              sinStock 
+                                ? 'border-rose-100 bg-rose-50/20' 
+                                : 'border-slate-100 bg-slate-50/50 hover:border-emerald-200'
+                            }`}
+                          >
+                            <div>
+                              <div className="flex items-center justify-between mb-1">
+                                <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400">
+                                  {prod.marca?.nombre || 'Genérico'}
+                                </span>
+                                <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
+                                  sinStock ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-800'
+                                }`}>
+                                  {sinStock ? 'Agotado (0)' : `Stock: ${prod.stock_actual}`}
+                                </span>
+                              </div>
+                              <h4 className="font-semibold text-sm text-slate-800 leading-tight">{prod.nombre}</h4>
+                              <p className="text-xs text-slate-500 mt-1 line-clamp-1">
+                                {prod.activo_dermatologico || 'Fórmula magistral / comercial'}
+                              </p>
                             </div>
-                            <h4 className="font-semibold text-sm text-slate-800 leading-tight">{prod.nombre}</h4>
-                            <p className="text-xs text-slate-500 mt-1 line-clamp-1">
-                              {prod.activo_dermatologico || 'Fórmula magistral / comercial'}
-                            </p>
-                          </div>
 
-                          <div className="mt-4 flex items-center justify-between pt-2 border-t border-slate-200/60">
-                            <span className="font-bold text-slate-900 text-sm">
-                              ${precio.toFixed(2)} MXN
-                            </span>
-
-                            <div className="flex items-center gap-1.5">
-                              {sinStock ? (
-                                <button
-                                  onClick={() => handleAbrirSustitutos(prod)}
-                                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-amber-100 text-amber-900 hover:bg-amber-200 transition-colors cursor-pointer"
-                                  title="Buscar alternativas con stock"
-                                >
-                                  <RefreshCw className="w-3 h-3" /> Sustitutos
-                                </button>
-                              ) : (
-                                <button
-                                  onClick={() => agregarAReceta(prod)}
-                                  disabled={yaRecetado}
-                                  className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
-                                    yaRecetado 
-                                      ? 'bg-slate-200 text-slate-400 cursor-not-allowed' 
-                                      : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm'
-                                  }`}
-                                >
-                                  <Plus className="w-3.5 h-3.5" />
-                                  {yaRecetado ? 'Agregado' : 'Recetar'}
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </>
-            )}
-
-            {/* TAB PROCEDIMIENTOS CON BOTÓN EDITAR (LÁPIZ) Y BORRAR */}
-            {tabCatalogo === 'PROCEDIMIENTOS' && (
-              <>
-                <div className="relative mb-3">
-                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
-                  <input
-                    type="text"
-                    placeholder="Buscar tratamiento (ej. Cauterización, Crioterapia, Punch)..."
-                    value={filtroProc}
-                    onChange={(e) => {
-                      setFiltroProc(e.target.value);
-                      cargarCatalogoProcedimientos(e.target.value);
-                    }}
-                    className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
-                </div>
-
-                {cargandoProc ? (
-                  <div className="py-12 text-center text-sm text-slate-400">Cargando tratamientos...</div>
-                ) : procedimientos.length === 0 ? (
-                  <div className="py-10 text-center text-slate-400 text-xs">
-                    No hay tratamientos registrados.{' '}
-                    <button 
-                      onClick={() => setModalNuevoProc(true)}
-                      className="text-emerald-700 font-bold underline cursor-pointer"
-                    >
-                      Dar de alta uno nuevo
-                    </button>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[320px] overflow-y-auto pr-1">
-                    {procedimientos.map(proc => {
-                      const yaAgregado = procedimientosReceta.some(p => p.procedimiento_id === proc.id);
-                      return (
-                        <div 
-                          key={proc.id}
-                          className="p-3.5 border border-slate-200/90 bg-white rounded-xl flex flex-col justify-between hover:border-emerald-300 transition-colors shadow-2xs"
-                        >
-                          <div>
-                            <div className="flex items-center justify-between mb-1">
-                              <span className="text-[10px] uppercase font-bold tracking-wider text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded">
-                                Procedimiento Clínico
+                            <div className="mt-4 flex items-center justify-between pt-2 border-t border-slate-200/60">
+                              <span className="font-bold text-slate-900 text-sm">
+                                ${precio.toFixed(2)} MXN
                               </span>
-                              {/* Botones de Acción: Editar y Eliminar */}
-                              <div className="flex items-center gap-1">
-                                <button
-                                  type="button"
-                                  onClick={() => abrirEdicionProcedimiento(proc)}
-                                  className="text-slate-400 hover:text-emerald-700 p-1 rounded hover:bg-slate-100 transition-colors cursor-pointer"
-                                  title="Editar tratamiento"
-                                >
-                                  <FileEdit className="w-3.5 h-3.5" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleEliminarProcedimiento(proc)}
-                                  className="text-slate-400 hover:text-rose-600 p-1 rounded hover:bg-rose-50 transition-colors cursor-pointer"
-                                  title="Eliminar tratamiento"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
+
+                              <div className="flex items-center gap-1.5">
+                                {sinStock ? (
+                                  <button
+                                    onClick={() => handleAbrirSustitutos(prod)}
+                                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-amber-100 text-amber-900 hover:bg-amber-200 transition-colors cursor-pointer"
+                                  >
+                                    <RefreshCw className="w-3 h-3" /> Sustitutos
+                                  </button>
+                                ) : (
+                                  <button
+                                    onClick={() => agregarAReceta(prod)}
+                                    disabled={yaRecetado}
+                                    className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
+                                      yaRecetado 
+                                        ? 'bg-slate-200 text-slate-400 cursor-not-allowed' 
+                                        : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm'
+                                    }`}
+                                  >
+                                    <Plus className="w-3.5 h-3.5" />
+                                    {yaRecetado ? 'Agregado' : 'Recetar'}
+                                  </button>
+                                )}
                               </div>
                             </div>
-                            <h4 className="font-semibold text-sm text-slate-800 leading-tight">{proc.nombre}</h4>
-                            {proc.descripcion && (
-                              <p className="text-xs text-slate-500 mt-1 line-clamp-2">
-                                {proc.descripcion}
-                              </p>
-                            )}
                           </div>
+                        );
+                      })
+                    )}
+                  </div>
+                )}
 
-                          <div className="mt-4 flex items-center justify-between pt-2 border-t border-slate-100">
-                            <span className="font-bold text-emerald-950 text-sm">
-                              ${Number(proc.precio_base || 0).toFixed(2)} MXN
-                            </span>
+                {/* TAB PROCEDIMIENTOS */}
+                {tabCatalogo === 'PROCEDIMIENTOS' && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[320px] overflow-y-auto pr-1">
+                    {procedimientos.length === 0 ? (
+                      <div className="col-span-2 py-10 text-center text-xs text-slate-400">
+                        No se encontraron tratamientos para esta búsqueda.
+                      </div>
+                    ) : (
+                      procedimientos.map(proc => {
+                        const yaAgregado = procedimientosReceta.some(p => p.procedimiento_id === proc.id);
+                        return (
+                          <div 
+                            key={proc.id}
+                            className="p-3.5 border border-slate-200/90 bg-white rounded-xl flex flex-col justify-between hover:border-emerald-300 transition-colors shadow-2xs"
+                          >
+                            <div>
+                              <div className="flex items-center justify-between mb-1">
+                                <span className="text-[10px] uppercase font-bold tracking-wider text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded">
+                                  Procedimiento Clínico
+                                </span>
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => abrirEdicionProcedimiento(proc)}
+                                    className="text-slate-400 hover:text-emerald-700 p-1 rounded hover:bg-slate-100 transition-colors cursor-pointer"
+                                    title="Editar tratamiento"
+                                  >
+                                    <FileEdit className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleEliminarProcedimiento(proc)}
+                                    className="text-slate-400 hover:text-rose-600 p-1 rounded hover:bg-rose-50 transition-colors cursor-pointer"
+                                    title="Eliminar tratamiento"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </div>
+                              <h4 className="font-semibold text-sm text-slate-800 leading-tight">{proc.nombre}</h4>
+                              {proc.descripcion && (
+                                <p className="text-xs text-slate-500 mt-1 line-clamp-2">
+                                  {proc.descripcion}
+                                </p>
+                              )}
+                            </div>
 
-                            <button
-                              type="button"
-                              onClick={() => agregarProcedimientoAReceta(proc)}
-                              disabled={yaAgregado}
-                              className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                                yaAgregado 
-                                  ? 'bg-slate-200 text-slate-400 cursor-not-allowed' 
-                                  : 'bg-emerald-800 hover:bg-emerald-900 text-white shadow-sm'
-                              }`}
-                            >
-                              <Plus className="w-3.5 h-3.5" />
-                              {yaAgregado ? 'Cargado' : '+ Agregar a cobro'}
-                            </button>
+                            <div className="mt-4 flex items-center justify-between pt-2 border-t border-slate-100">
+                              <span className="font-bold text-emerald-950 text-sm">
+                                ${Number(proc.precio_base || 0).toFixed(2)} MXN
+                              </span>
+
+                              <button
+                                type="button"
+                                onClick={() => agregarProcedimientoAReceta(proc)}
+                                disabled={yaAgregado}
+                                className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                                  yaAgregado 
+                                    ? 'bg-slate-200 text-slate-400 cursor-not-allowed' 
+                                    : 'bg-emerald-800 hover:bg-emerald-900 text-white shadow-sm'
+                                }}}`}
+                              >
+                                <Plus className="w-3.5 h-3.5" />
+                                {yaAgregado ? 'Cargado' : '+ Agregar a cobro'}
+                              </button>
+                            </div>
                           </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })
+                    )}
                   </div>
                 )}
               </>
@@ -1033,7 +1020,7 @@ export default function VistaDoctor() {
 
         </div>
 
-        {/* Columna Derecha: Canasta de Receta, Procedimientos Realizados y Cobro */}
+        {/* Columna Derecha: Canasta de Receta, Procedimientos y Honorarios */}
         <div className="lg:col-span-5 bg-white p-5 rounded-2xl shadow-sm border border-slate-100 space-y-4">
           <div className="flex items-center justify-between pb-3 border-b border-slate-100">
             <div>
@@ -1304,7 +1291,7 @@ export default function VistaDoctor() {
       </div>
 
       {/* ======================================================== */}
-      {/* MODAL / HISTORIAL CLÍNICO CON BUSCADOR Y FILTROS         */}
+      {/* MODAL / HISTORIAL CLÍNICO CON BÚSQUEDA INTEGRAL          */}
       {/* ======================================================== */}
       {modalHistorial && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -1333,7 +1320,7 @@ export default function VistaDoctor() {
                 <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
                 <input
                   type="text"
-                  placeholder="Buscar por tratamiento, producto, diagnóstico o folio..."
+                  placeholder="Buscar por tratamiento, producto, activo (ej. niaci), diagnóstico o folio..."
                   value={busquedaHistorial}
                   onChange={(e) => setBusquedaHistorial(e.target.value)}
                   className="w-full pl-9 pr-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
@@ -1405,7 +1392,7 @@ export default function VistaDoctor() {
                       </p>
                     </div>
 
-                    {/* Procedimientos realizados en esa cita */}
+                    {/* Procedimientos realizados en la cita */}
                     {rec.procedimientos && rec.procedimientos.length > 0 && (
                       <div className="space-y-1 pt-1">
                         <span className="text-[11px] font-bold uppercase tracking-wider text-blue-900 block">Tratamientos Clínicos Realizados:</span>
@@ -1423,7 +1410,7 @@ export default function VistaDoctor() {
                       </div>
                     )}
 
-                    {/* Medicamentos prescritos */}
+                    {/* Medicamentos prescritos con visualización de activo */}
                     {rec.detalles && rec.detalles.length > 0 && (
                       <div className="space-y-1.5 pt-1">
                         <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block">Medicamentos prescritos:</span>
@@ -1434,6 +1421,11 @@ export default function VistaDoctor() {
                                 <Pill className="w-3 h-3 text-emerald-600 flex-shrink-0" />
                                 <span className="truncate">{det.producto?.nombre || `Producto #${det.producto_id}`}</span>
                               </div>
+                              {det.producto?.activo_dermatologico && (
+                                <div className="text-[10px] text-emerald-700 font-medium pl-4">
+                                  {det.producto.activo_dermatologico}
+                                </div>
+                              )}
                               <div className="text-[11px] text-slate-500 pl-4">
                                 Cantidad: <b>{det.cantidad}</b> • {det.indicaciones || 'Indicación estándar'}
                               </div>
@@ -1553,7 +1545,7 @@ export default function VistaDoctor() {
         </div>
       )}
 
-      {/* Modal Editar Tratamiento Clínico (PATCH) */}
+      {/* Modal Editar Tratamiento Clínico */}
       {modalEditarProc && procAEditar && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl space-y-4">

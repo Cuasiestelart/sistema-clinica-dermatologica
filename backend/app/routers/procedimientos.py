@@ -1,5 +1,7 @@
+import unicodedata
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from typing import List, Optional
 
 from app.database import get_db
@@ -13,17 +15,21 @@ from app.schemas.procedimiento import (
 
 router = APIRouter(prefix="/api/procedimientos", tags=["Procedimientos"])
 
+def limpiar_termino(termino: str) -> str:
+    nfkd = unicodedata.normalize('NFKD', termino)
+    return "".join(c for c in nfkd if not unicodedata.combining(c)).lower()
+
 @router.get("/", response_model=List[ProcedimientoResponse])
 def listar_procedimientos(
     q: Optional[str] = Query(None, description="Buscar procedimiento"),
     db: Session = Depends(get_db)
 ):
     query = db.query(Procedimiento)
-    if q:
-        termino = f"%{q.strip()}%"
+    if q and q.strip():
+        termino = f"%{limpiar_termino(q.strip())}%"
         query = query.filter(
-            (Procedimiento.nombre.ilike(termino)) | 
-            (Procedimiento.descripcion.ilike(termino))
+            func.sin_acentos(Procedimiento.nombre).like(termino) |
+            func.sin_acentos(Procedimiento.descripcion).like(termino)
         )
     return query.order_by(Procedimiento.nombre.asc()).all()
 
@@ -93,7 +99,6 @@ def eliminar_procedimiento(
     if not proc:
         raise HTTPException(status_code=404, detail="Procedimiento no encontrado.")
 
-    # Protección de integridad: no borrar si ya fue registrado en consultas previas
     en_uso = db.query(RecetaProcedimiento).filter(
         RecetaProcedimiento.procedimiento_id == procedimiento_id
     ).first()
