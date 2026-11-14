@@ -6,6 +6,7 @@ from app.models.etiqueta import Etiqueta
 from app.models.producto import Producto
 from app.models.paciente import Paciente
 
+
 def normalizar_slug(texto: str) -> str:
     texto_limpio = re.sub(r'\s+', ' ', texto.strip().lower())
     reemplazos = (("á", "a"), ("é", "e"), ("í", "i"), ("ó", "o"), ("ú", "u"), ("ñ", "n"))
@@ -13,15 +14,16 @@ def normalizar_slug(texto: str) -> str:
         texto_limpio = texto_limpio.replace(origen, destino)
     return texto_limpio.replace(" ", "-")
 
+
 def poblar_base_datos():
     print("-> Creando tablas en base de datos local...")
-    Base.metadata.drop_all(bind=engine) # reiniciar para pruebas limpias
+    Base.metadata.drop_all(bind=engine)  # reiniciar para pruebas limpias
     Base.metadata.create_all(bind=engine)
 
     db = SessionLocal()
     try:
-        print("-> Instertando marcas...")
-        marcas_data= [
+        print("-> Insertando marcas...")
+        marcas_data = [
             Marca(nombre="PBT PureSkin", descuento_porcentaje=10.0),
             Marca(nombre="ISDIN", descuento_porcentaje=15.0),
             Marca(nombre="Eucerin", descuento_porcentaje=0.0),
@@ -31,7 +33,7 @@ def poblar_base_datos():
         db.add_all(marcas_data)
         db.commit()
 
-        #Diccionario para acceder a marcas por nombre
+        # Diccionario para acceder a marcas por nombre
         marcas_map = {m.nombre: m for m in marcas_data}
 
         print("-> Insertando etiquetas clínicas...")
@@ -56,7 +58,7 @@ def poblar_base_datos():
         db.commit()
 
         print("-> Insertando productos muestra...")
-        #1. Prueba producto
+        # 1. Prueba producto
         pureskin_tonico = Producto(
             marca_id=marcas_map["PBT PureSkin"].id,
             sku="8424561081896",
@@ -70,14 +72,14 @@ def poblar_base_datos():
             ]
         )
 
-        #2. Protector ISDIN (Agorado a propósito para probar sustituto)
+        # 2. Protector ISDIN (Agotado a propósito para probar sustituto)
         isdin_fusion = Producto(
             marca_id=marcas_map["ISDIN"].id,
             sku="ISD-FUS-02",
             nombre="ISDIN Fusion Water Magic fps 50",
             activo_dermatologico="Filtros UV / Ácido Hialurónico",
             precio_base=680.00,
-            stock_actual=0, #Agotado
+            stock_actual=0,  # Agotado
             etiquetas=[
                 etiquetas_map["Protector solar"],
                 etiquetas_map["Piel grasa / acné"],
@@ -85,14 +87,14 @@ def poblar_base_datos():
             ]
         )
 
-        #3. Protecto Eucerin (Sustituto directo con stock)
+        # 3. Protector Eucerin (Sustituto directo con stock)
         eucerin_oil_control = Producto(
             marca_id=marcas_map["Eucerin"].id,
             sku="EUC-OIL-03",
             nombre="Eucerin Sun Gel-Cream Oil Control FPS 50+",
             activo_dermatologico="L-Carnitina / Filtros UV",
             precio_base=620.00,
-            stock_actual=8, # DISPONIBLE
+            stock_actual=8,  # DISPONIBLE
             etiquetas=[
                 etiquetas_map["Protector solar"],
                 etiquetas_map["Piel grasa / acné"],
@@ -101,8 +103,8 @@ def poblar_base_datos():
             ]
         )
 
-        #4. Limpiador CeraVe
-        cerave_foaing = Producto(
+        # 4. Limpiador CeraVe
+        cerave_foaming = Producto(
             marca_id=marcas_map["CeraVe"].id,
             sku="CER-FOA-04",
             nombre="CeraVe Gel Limpiador Espumoso 473ml",
@@ -116,27 +118,42 @@ def poblar_base_datos():
             ]
         )
 
-        db.add_all([pureskin_tonico, isdin_fusion, eucerin_oil_control, cerave_foaing])
+        db.add_all([pureskin_tonico, isdin_fusion, eucerin_oil_control, cerave_foaming])
         db.commit()
 
-        print("-> Insertando paciente muestra...")
-        paciente_demo = Paciente(
-            nombre_completo="Roberto Tapia Torres",
-            telefono="3121317624",
-            nota_fija="Paciente con piel mixta y tendencia a brillo en zona T. Alérgico a sulfas. Prefiere presentaciones ligeras en gel.",
-            saldo_monedero=85.00
-        )
+        print("-> Insertando pacientes muestra...")
+        pacientes_demo = [
+            Paciente(
+                nombre_completo="Valeria Mendoza Ríos",
+                telefono="5550192834",
+                nota_fija="Paciente con piel mixta y tendencia a brillo en zona T. Alérgica a sulfas. Prefiere presentaciones ligeras en gel.",
+                saldo_monedero=85.00
+            ),
+            Paciente(
+                nombre_completo="Carlos Eduardo Navarro",
+                telefono="5550147652",
+                nota_fija="Piel sensible con antecedentes de dermatitis atópica leve. Evitar fragancias y exfoliantes químicos fuertes.",
+                saldo_monedero=150.00
+            ),
+            Paciente(
+                nombre_completo="Sofía Alejandra Castañeda",
+                telefono="5550183940",
+                nota_fija="Tratamiento de seguimiento para acné adulto. Sin alergias conocidas. Requiere protector solar toque seco.",
+                saldo_monedero=0.00
+            )
+        ]
 
-        db.add(paciente_demo)
+        db.add_all(pacientes_demo)
         db.commit()
 
-        print("-> !Semilla completada exitosamente! Base de datos lista.")
+        print("-> ¡Semilla completada exitosamente! Base de datos lista.")
 
     except Exception as e:
-        print (f"Error al poblar la base de datos: {e}")
+        print(f"Error al poblar la base de datos: {e}")
         db.rollback()
     finally:
         db.close()
+
 
 if __name__ == "__main__":
     poblar_base_datos()
